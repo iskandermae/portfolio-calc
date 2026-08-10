@@ -30,7 +30,7 @@ PortfolioCalc.sln
 
 ## Stack
 
-.NET 8, EF Core + SQLite, .NET MAUI Blazor Hybrid, xUnit.
+.NET 10, EF Core + SQLite, .NET MAUI Blazor Hybrid, xUnit.
 
 ## Build & Test
 

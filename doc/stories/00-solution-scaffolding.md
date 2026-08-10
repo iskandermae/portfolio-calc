@@ -7,7 +7,7 @@ baseline EF Core + SQLite wiring with an empty schema.
 
 ## Acceptance Criteria
 - [ ] `PortfolioCalc.sln` created with `PortfolioCalc.Core`, `PortfolioCalc.App` (.NET MAUI
-      Blazor Hybrid), and `PortfolioCalc.Core.Tests` (xUnit) projects, targeting .NET 8.
+      Blazor Hybrid), and `PortfolioCalc.Core.Tests` (xUnit) projects, targeting .NET 10.
 - [ ] `PortfolioCalc.Core` has `Core/` and `Data/` folders per the layering rules in
       CLAUDE.md.
 - [ ] `PortfolioCalc.App` has `Application/` and `Gui/` folders.
