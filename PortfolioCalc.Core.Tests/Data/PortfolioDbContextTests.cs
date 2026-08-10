@@ -16,5 +16,6 @@ public class PortfolioDbContextTests
         context.Database.OpenConnection();
 
         Assert.True(context.Database.EnsureCreated());
+        Assert.Empty(context.Accounts);
     }
 }

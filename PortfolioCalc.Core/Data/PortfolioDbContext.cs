@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PortfolioCalc.Core.Domain;
 
 namespace PortfolioCalc.Core.Data;
 
@@ -9,7 +10,11 @@ public class PortfolioDbContext : DbContext
 
     public static string DefaultDatabasePath => Path.Combine(DefaultDataDirectory, "portfolio.sqlite");
 
-    public DbSet<AppMetadata> AppMetadata => Set<AppMetadata>();
+    public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<Security> Securities => Set<Security>();
+    public DbSet<Position> Positions => Set<Position>();
+    public DbSet<CashTransaction> CashTransactions => Set<CashTransaction>();
+    public DbSet<SecurityTransaction> SecurityTransactions => Set<SecurityTransaction>();
 
     public PortfolioDbContext(DbContextOptions<PortfolioDbContext> options) : base(options)
     {
@@ -23,11 +28,39 @@ public class PortfolioDbContext : DbContext
             .Options;
         return new PortfolioDbContext(options);
     }
-}
 
-/// <summary>Placeholder table until the first real domain entity (transactions) lands.</summary>
-public class AppMetadata
-{
-    public int Id { get; set; }
-    public string SchemaVersion { get; set; } = "0";
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Security>()
+            .HasIndex(s => s.Ticker)
+            .IsUnique();
+
+        modelBuilder.Entity<Position>()
+            .HasIndex(p => new { p.AccountId, p.SecurityId })
+            .IsUnique();
+
+        modelBuilder.Entity<Position>()
+            .HasOne(p => p.Account)
+            .WithMany()
+            .HasForeignKey(p => p.AccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Position>()
+            .HasOne(p => p.Security)
+            .WithMany()
+            .HasForeignKey(p => p.SecurityId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<CashTransaction>()
+            .HasOne(t => t.Account)
+            .WithMany()
+            .HasForeignKey(t => t.AccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<SecurityTransaction>()
+            .HasOne(t => t.Position)
+            .WithMany()
+            .HasForeignKey(t => t.PositionId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
 }

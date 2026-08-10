@@ -1,8 +1,10 @@
 # CLAUDE.md
 
 Backlog: [doc/stories/](doc/stories/).
+Design decisions and their rationale: [doc/decisions.md](doc/decisions.md) — check before modeling anything; add an entry when you make a non-obvious call.
 
 ## Working style
+- No unused code: don't add a method/class/field unless something calls it now or an acceptance criterion names it. A test written to call a method you invented doesn't justify it — the need must come first. Build vertically (one thin end-to-end slice of a story at a time), not by pre-building full CRUD/interfaces for entities "for completeness."
 - Flag ambiguities/discrepancies between requirements and code before implementing — don't guess silently.
 - If you notice an existing bug or smell while touching a file, mention it; fix only if trivial and in-scope, otherwise report it instead of scope-creeping.
 - Prefer refactoring over duplicating when a change touches an existing pattern (DRY), but don't refactor unrelated code you didn't  to touch - report this.
