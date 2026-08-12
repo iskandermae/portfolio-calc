@@ -17,6 +17,10 @@ Design decisions and their rationale: [doc/decisions.md](doc/decisions.md) — c
 - Base currency change → reports recompute on the fly from stored FX history, no migration.
 - Synthetic growth rate: solve `currentPrice = initPrice * (1 + r)^n` on a days-elapsed basis, annualize.
 
+## Personal/finance information
+
+- Do not use personal or financial information (name, ISIN, amounts, ...) in the files, that are part of the repository
+
 ## Architecture
 
 ```

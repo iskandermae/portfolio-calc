@@ -75,7 +75,7 @@ public class CashTransactionRepositoryTests
             AccountId = account.Id,
             Type = CashTransactionType.Withdrawal,
             Date = new DateOnly(2026, 1, 15),
-            Amount = 100m,
+            Amount = -100m,
             Currency = "USD",
         });
 

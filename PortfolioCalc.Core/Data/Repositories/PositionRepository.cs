@@ -16,6 +16,9 @@ public class PositionRepository(PortfolioDbContext context) : IPositionRepositor
     public Task<Position?> GetByIdAsync(int id) =>
         context.Positions.FirstOrDefaultAsync(p => p.Id == id);
 
+    public Task<Position?> GetByAccountAndSecurityAsync(int accountId, int securityId) =>
+        context.Positions.FirstOrDefaultAsync(p => p.AccountId == accountId && p.SecurityId == securityId);
+
     public async Task DeleteAsync(int id)
     {
         var entity = await context.Positions.FindAsync(id);

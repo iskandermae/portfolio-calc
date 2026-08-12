@@ -18,10 +18,10 @@ public class SecurityTransactionRepositoryTests
         return context;
     }
 
-    private static async Task<Position> CreatePosition(PortfolioDbContext context, string ticker = "AAPL")
+    private static async Task<Position> CreatePosition(PortfolioDbContext context, string symbol = "AAPL")
     {
         var account = await new AccountRepository(context).AddAsync(new Account { Name = "IBKR Main" });
-        var security = await new SecurityRepository(context).AddAsync(new Security { Ticker = ticker, Name = "Apple Inc.", Currency = "USD" });
+        var security = await new SecurityRepository(context).AddAsync(new Security { Symbol = symbol, Name = "Apple Inc.", Currency = "USD" });
         return await new PositionRepository(context).AddAsync(new Position { AccountId = account.Id, SecurityId = security.Id });
     }
 
@@ -38,9 +38,9 @@ public class SecurityTransactionRepositoryTests
             Type = SecurityTransactionType.Buy,
             Date = new DateOnly(2026, 1, 15),
             Quantity = 10m,
-            Amount = 1500m,
+            Amount = -1500m,
             Currency = "USD",
-            FeeAmount = 1m,
+            FeeAmount = -1m,
             FeeCurrency = "USD",
         });
 
@@ -49,7 +49,7 @@ public class SecurityTransactionRepositoryTests
         Assert.NotNull(fetched);
         Assert.Equal(SecurityTransactionType.Buy, fetched.Type);
         Assert.Equal(10m, fetched.Quantity);
-        Assert.Equal(1m, fetched.FeeAmount);
+        Assert.Equal(-1m, fetched.FeeAmount);
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public class SecurityTransactionRepositoryTests
             Type = SecurityTransactionType.Buy,
             Date = new DateOnly(2026, 1, 15),
             Quantity = 10m,
-            Amount = 1500m,
+            Amount = -1500m,
             Currency = "USD",
         });
 
@@ -104,14 +104,14 @@ public class SecurityTransactionRepositoryTests
         var positionRepository = new PositionRepository(context);
         var repository = new SecurityTransactionRepository(context);
 
-        var security = await securityRepository.AddAsync(new Security { Ticker = "AAPL", Name = "Apple Inc.", Currency = "USD" });
+        var security = await securityRepository.AddAsync(new Security { Symbol = "AAPL", Name = "Apple Inc.", Currency = "USD" });
         var accountA = await accountRepository.AddAsync(new Account { Name = "Broker A" });
         var accountB = await accountRepository.AddAsync(new Account { Name = "Broker B" });
         var positionA = await positionRepository.AddAsync(new Position { AccountId = accountA.Id, SecurityId = security.Id });
         var positionB = await positionRepository.AddAsync(new Position { AccountId = accountB.Id, SecurityId = security.Id });
 
-        await repository.AddAsync(new SecurityTransaction { PositionId = positionA.Id, Type = SecurityTransactionType.Buy, Date = new DateOnly(2026, 1, 1), Quantity = 1m, Amount = 100m, Currency = "USD" });
-        await repository.AddAsync(new SecurityTransaction { PositionId = positionB.Id, Type = SecurityTransactionType.Buy, Date = new DateOnly(2026, 1, 2), Quantity = 2m, Amount = 200m, Currency = "USD" });
+        await repository.AddAsync(new SecurityTransaction { PositionId = positionA.Id, Type = SecurityTransactionType.Buy, Date = new DateOnly(2026, 1, 1), Quantity = 1m, Amount = -100m, Currency = "USD" });
+        await repository.AddAsync(new SecurityTransaction { PositionId = positionB.Id, Type = SecurityTransactionType.Buy, Date = new DateOnly(2026, 1, 2), Quantity = 2m, Amount = -200m, Currency = "USD" });
 
         var result = await repository.GetBySecurityAsync(security.Id);
 
@@ -130,7 +130,7 @@ public class SecurityTransactionRepositoryTests
             PositionId = position.Id,
             Type = SecurityTransactionType.Buy,
             Date = new DateOnly(2026, 1, 1),
-            Amount = 100m,
+            Amount = -100m,
             Currency = "USD",
         };
 

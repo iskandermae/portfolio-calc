@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PortfolioCalc.Core\PortfolioCalc.Core.csproj" />
+  </ItemGroup>
+
+  <!-- PortfolioCalc.App is a .NET MAUI single-project (Microsoft.Maui.Resizetizer etc.),
+       which isn't a viable ProjectReference target for a plain xUnit project (its
+       resource-generation targets misbehave under a cross-referencing consumer). The
+       Application/ layer itself has no MAUI dependency, so its sources are compiled
+       directly into this test project instead of referencing the app project. -->
+  <ItemGroup>
+    <Compile Include="..\PortfolioCalc.App\Application\**\*.cs">
+      <Link>Application\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\import\samples\*.xml" Link="samples\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

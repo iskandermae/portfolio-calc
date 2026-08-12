@@ -10,4 +10,8 @@ public interface ISecurityTransactionRepository
     Task DeleteAsync(int id);
     Task<IReadOnlyList<SecurityTransaction>> GetByDateRangeAsync(DateOnly from, DateOnly to);
     Task<IReadOnlyList<SecurityTransaction>> GetBySecurityAsync(int securityId);
+    /// <summary>Transactions for one Position — used by the IBKR import to dedup a
+    /// mapped transaction against what's already stored (Position + Amount + Date +
+    /// Currency; see doc/decisions.md) before inserting it.</summary>
+    Task<IReadOnlyList<SecurityTransaction>> GetByPositionAsync(int positionId);
 }

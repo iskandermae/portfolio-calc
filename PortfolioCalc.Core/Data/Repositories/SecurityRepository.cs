@@ -16,6 +16,9 @@ public class SecurityRepository(PortfolioDbContext context) : ISecurityRepositor
     public Task<Security?> GetByIdAsync(int id) =>
         context.Securities.FirstOrDefaultAsync(s => s.Id == id);
 
+    public Task<Security?> GetBySymbolAndCurrencyAsync(string symbol, string currency) =>
+        context.Securities.FirstOrDefaultAsync(s => s.Symbol == symbol && s.Currency == currency);
+
     public async Task DeleteAsync(int id)
     {
         var entity = await context.Securities.FindAsync(id);

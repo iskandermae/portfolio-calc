@@ -16,6 +16,9 @@ public class AccountRepository(PortfolioDbContext context) : IAccountRepository
     public Task<Account?> GetByIdAsync(int id) =>
         context.Accounts.FirstOrDefaultAsync(a => a.Id == id);
 
+    public Task<Account?> GetByNameAsync(string name) =>
+        context.Accounts.FirstOrDefaultAsync(a => a.Name == name);
+
     public async Task DeleteAsync(int id)
     {
         var entity = await context.Accounts.FindAsync(id);

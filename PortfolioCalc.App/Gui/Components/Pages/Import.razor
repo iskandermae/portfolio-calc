@@ -1,0 +1,76 @@
+@page "/import"
+@using PortfolioCalc.App.Application.Import
+@using PortfolioCalc.App.Application.Import.Ibkr
+@inject IbkrImportService ImportService
+
+<h1>Import IBKR Transactions</h1>
+
+<p>Select an IBKR Flex Query XML export to import Buy/Sell trades, deposits/withdrawals,
+   interest, dividends, taxes and in-kind transfers.</p>
+
+<InputFile OnChange="OnFileSelected" accept=".xml" />
+
+@if (_isImporting)
+{
+    <p><em>Importing...</em></p>
+}
+
+@if (_error is not null)
+{
+    <p class="text-danger">@_error</p>
+}
+
+@if (_result is not null)
+{
+    <h2>Imported (@_result.ImportedCount)</h2>
+    <ul>
+        @foreach (var line in _result.Imported)
+        {
+            <li>@line</li>
+        }
+    </ul>
+
+    <h2>Recognized but skipped (@_result.RecognizedButSkipped.Count)</h2>
+    <ul>
+        @foreach (var skipped in _result.RecognizedButSkipped)
+        {
+            <li>@skipped.ElementName: @skipped.Reason</li>
+        }
+    </ul>
+
+    <h2>Unrecognized (@_result.Unrecognized.Count)</h2>
+    <ul>
+        @foreach (var unrecognized in _result.Unrecognized)
+        {
+            <li>@unrecognized.ElementName: @unrecognized.Reason</li>
+        }
+    </ul>
+}
+
+@code {
+    private const long MaxFileSizeBytes = 20 * 1024 * 1024;
+
+    private bool _isImporting;
+    private string? _error;
+    private ImportResult? _result;
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _result = null;
+        _isImporting = true;
+        try
+        {
+            using var stream = e.File.OpenReadStream(MaxFileSizeBytes);
+            _result = await ImportService.ImportAsync(stream);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            _isImporting = false;
+        }
+    }
+}

@@ -17,12 +17,22 @@ public class CashTransaction
 
     public void Validate()
     {
-        if (Amount <= 0)
+        // Sign convention (see doc/decisions.md): incoming amounts (Deposit, Interest) are
+        // positive; outgoing amounts (Withdrawal) are negative.
+        if (Type is CashTransactionType.Withdrawal)
+        {
+            if (Amount >= 0)
+                throw new InvalidOperationException("Amount must be negative for Withdrawal transactions.");
+        }
+        else if (Amount <= 0)
+        {
             throw new InvalidOperationException("Amount must be positive.");
+        }
+
         if (string.IsNullOrWhiteSpace(Currency))
             throw new InvalidOperationException("Currency is required.");
-        if (FeeAmount is < 0)
-            throw new InvalidOperationException("FeeAmount cannot be negative.");
+        if (FeeAmount is > 0)
+            throw new InvalidOperationException("FeeAmount cannot be positive.");
         if (FeeAmount.HasValue != !string.IsNullOrWhiteSpace(FeeCurrency))
             throw new InvalidOperationException("FeeAmount and FeeCurrency must be set together.");
     }

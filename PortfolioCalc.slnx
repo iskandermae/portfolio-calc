@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="PortfolioCalc.App/PortfolioCalc.App.csproj" />
+  <Project Path="PortfolioCalc.App.Tests/PortfolioCalc.App.Tests.csproj" />
   <Project Path="PortfolioCalc.Core.Tests/PortfolioCalc.Core.Tests.csproj" />
   <Project Path="PortfolioCalc.Core/PortfolioCalc.Core.csproj" />
 </Solution>

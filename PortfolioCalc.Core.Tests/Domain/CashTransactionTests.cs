@@ -24,7 +24,7 @@ public class CashTransactionTests
     public void Validate_accepts_a_transaction_with_matching_fee_fields()
     {
         var tx = ValidDeposit();
-        tx.FeeAmount = 5m;
+        tx.FeeAmount = -5m;
         tx.FeeCurrency = "USD";
         tx.Validate();
     }
@@ -36,6 +36,24 @@ public class CashTransactionTests
     {
         var tx = ValidDeposit();
         tx.Amount = amount;
+        Assert.Throws<InvalidOperationException>(tx.Validate);
+    }
+
+    [Fact]
+    public void Validate_accepts_a_negative_withdrawal()
+    {
+        var tx = ValidDeposit();
+        tx.Type = CashTransactionType.Withdrawal;
+        tx.Amount = -100m;
+        tx.Validate();
+    }
+
+    [Fact]
+    public void Validate_rejects_a_positive_withdrawal()
+    {
+        var tx = ValidDeposit();
+        tx.Type = CashTransactionType.Withdrawal;
+        tx.Amount = 100m;
         Assert.Throws<InvalidOperationException>(tx.Validate);
     }
 
@@ -64,10 +82,19 @@ public class CashTransactionTests
     }
 
     [Fact]
-    public void Validate_rejects_negative_fee_amount()
+    public void Validate_accepts_negative_fee_amount()
     {
         var tx = ValidDeposit();
         tx.FeeAmount = -1m;
+        tx.FeeCurrency = "USD";
+        tx.Validate();
+    }
+
+    [Fact]
+    public void Validate_rejects_positive_fee_amount()
+    {
+        var tx = ValidDeposit();
+        tx.FeeAmount = 1m;
         tx.FeeCurrency = "USD";
         Assert.Throws<InvalidOperationException>(tx.Validate);
     }

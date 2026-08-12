@@ -32,7 +32,7 @@ public class PortfolioDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Security>()
-            .HasIndex(s => s.Ticker)
+            .HasIndex(s => new { s.Symbol, s.Currency })
             .IsUnique();
 
         modelBuilder.Entity<Position>()
