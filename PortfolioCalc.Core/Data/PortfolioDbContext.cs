@@ -17,6 +17,7 @@ public class PortfolioDbContext : DbContext
     public DbSet<SecurityTransaction> SecurityTransactions => Set<SecurityTransaction>();
     public DbSet<FxRate> FxRates => Set<FxRate>();
     public DbSet<SecurityPrice> SecurityPrices => Set<SecurityPrice>();
+    public DbSet<AppSettings> AppSettings => Set<AppSettings>();
 
     public PortfolioDbContext(DbContextOptions<PortfolioDbContext> options) : base(options)
     {

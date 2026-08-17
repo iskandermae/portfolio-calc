@@ -138,3 +138,17 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   caching shape are already in place for whichever provider a future story adds — that
   story only needs to supply the `Data/` implementation and DI wiring, tested here
   against a fake provider instead of a real API.
+- **The base-currency setting is a single-row `AppSettings` table (fixed `Id = 1`,
+  upserted), not a local config file.** Keeps it in the same SQLite database and behind
+  the same repository pattern as everything else, instead of introducing a second
+  persistence mechanism for one value.
+- **Base-currency conversion (story 05) is a narrow `BaseCurrencyConversionService`
+  Application-layer method, not wired into any report/portfolio-total screen.** Stories
+  08–11 (the actual report screens) don't exist yet, so there's nothing real to wire it
+  into; the service reads the setting and stored FX history fresh on every call — proving
+  no migration is needed when the setting changes — and is the interface those future
+  screens will call.
+- **`SupportedCurrencies.Codes` is a small static list (USD, EUR, GBP, CHF, JPY, AUD,
+  CAD), not a full ISO-4217 table.** No currency enum/list existed before story 05; these
+  are major currencies also covered by the Frankfurter provider (story 03/04). Extend only
+  when a real currency need shows up.

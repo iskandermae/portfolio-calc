@@ -1,0 +1,39 @@
+@page "/settings"
+@using PortfolioCalc.Core.Domain
+@using PortfolioCalc.Core.Repositories
+@inject IAppSettingsRepository SettingsRepository
+
+<h1>Settings</h1>
+
+<div class="mb-3">
+    <label for="baseCurrency" class="form-label">Base currency</label>
+    <select id="baseCurrency" class="form-select" style="max-width: 12rem" @bind="_baseCurrency" @bind:after="OnBaseCurrencyChanged">
+        @foreach (var currency in SupportedCurrencies.Codes)
+        {
+            <option value="@currency">@currency</option>
+        }
+    </select>
+</div>
+
+@if (_saved)
+{
+    <p><em>Saved.</em></p>
+}
+
+@code {
+    private string _baseCurrency = SupportedCurrencies.Codes[0];
+    private bool _saved;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await SettingsRepository.GetAsync();
+        if (settings is not null)
+            _baseCurrency = settings.BaseCurrency;
+    }
+
+    private async Task OnBaseCurrencyChanged()
+    {
+        await SettingsRepository.SaveAsync(new AppSettings { BaseCurrency = _baseCurrency });
+        _saved = true;
+    }
+}

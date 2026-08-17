@@ -47,6 +47,9 @@ public static class MauiProgram
 		builder.Services.AddHttpClient<IFxRateProvider, FrankfurterFxRateProvider>();
 		builder.Services.AddScoped<FxRateService>();
 
+		builder.Services.AddScoped<IAppSettingsRepository, AppSettingsRepository>();
+		builder.Services.AddScoped<BaseCurrencyConversionService>();
+
 #if DEBUG
 		builder.Services.AddBlazorWebViewDeveloperTools();
 		builder.Logging.AddDebug();
