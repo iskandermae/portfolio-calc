@@ -2,12 +2,15 @@
 using Microsoft.Extensions.Logging;
 using PortfolioCalc.App.Application.Fx;
 using PortfolioCalc.App.Application.Import.Ibkr;
+using PortfolioCalc.App.Application.Inflation;
 using PortfolioCalc.Core.Data;
 using PortfolioCalc.Core.Data.Fx;
 using PortfolioCalc.Core.Data.Import.Ibkr;
+using PortfolioCalc.Core.Data.Inflation;
 using PortfolioCalc.Core.Data.Repositories;
 using PortfolioCalc.Core.Fx;
 using PortfolioCalc.Core.Import;
+using PortfolioCalc.Core.Inflation;
 using PortfolioCalc.Core.Repositories;
 
 namespace PortfolioCalc.App;
@@ -49,6 +52,10 @@ public static class MauiProgram
 
 		builder.Services.AddScoped<IAppSettingsRepository, AppSettingsRepository>();
 		builder.Services.AddScoped<BaseCurrencyConversionService>();
+
+		builder.Services.AddScoped<IInflationRateRepository, InflationRateRepository>();
+		builder.Services.AddHttpClient<IInflationRateProvider, WorldBankInflationRateProvider>();
+		builder.Services.AddScoped<InflationRateService>();
 
 #if DEBUG
 		builder.Services.AddBlazorWebViewDeveloperTools();

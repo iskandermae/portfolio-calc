@@ -152,3 +152,19 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   CAD), not a full ISO-4217 table.** No currency enum/list existed before story 05; these
   are major currencies also covered by the Frankfurter provider (story 03/04). Extend only
   when a real currency need shows up.
+- **Inflation data source (story 06's deferred open question) is the World Bank API, not
+  manual file import.** It's free, no API key, no rate-limit tier — same reasoning as
+  Frankfurter for FX (story 03) — and, unlike a manual import, a real API can genuinely be
+  queried lazily on calculation demand rather than requiring the user to source and upload
+  a file themselves each time a new period is needed.
+- **`InflationRate.Period` is a `DateOnly` normalized to the 1st of the year (the World
+  Bank's CPI indicator is annual-only), not a bespoke year/month "period" type.** Reuses
+  the same comparable/range-queryable shape as `FxRate.Date`/`SecurityPrice.Date` instead
+  of inventing a new period abstraction for what is just a queryable key; a future monthly
+  source would normalize to the 1st of its month the same way.
+- **`IInflationRateProvider` takes a base currency, not a country code.** The World Bank
+  indexes data by country/region, so `WorldBankInflationRateProvider` privately maps each
+  of `SupportedCurrencies.Codes` to one representative country/region code (e.g. EUR to
+  the World Bank's "EMU" euro-area aggregate) — callers stay in currency terms, matching
+  every other rate/price interface in this codebase, and the mapping is an implementation
+  detail of this one provider rather than a general currency-to-country concept.

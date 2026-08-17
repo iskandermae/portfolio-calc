@@ -18,6 +18,7 @@ public class PortfolioDbContext : DbContext
     public DbSet<FxRate> FxRates => Set<FxRate>();
     public DbSet<SecurityPrice> SecurityPrices => Set<SecurityPrice>();
     public DbSet<AppSettings> AppSettings => Set<AppSettings>();
+    public DbSet<InflationRate> InflationRates => Set<InflationRate>();
 
     public PortfolioDbContext(DbContextOptions<PortfolioDbContext> options) : base(options)
     {
@@ -79,5 +80,9 @@ public class PortfolioDbContext : DbContext
             .WithMany()
             .HasForeignKey(p => p.SecurityId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InflationRate>()
+            .HasIndex(r => new { r.BaseCurrency, r.Period })
+            .IsUnique();
     }
 }
