@@ -5,20 +5,25 @@ Persist fetched FX rates and security prices locally so they're reused instead o
 re-fetched, reducing external calls and giving reports a stable historical series.
 
 ## Acceptance Criteria
-- [ ] `Core`/`Data` schema stores FX rates and security prices keyed by
+- [x] `Core`/`Data` schema stores FX rates and security prices keyed by
       (currency pair or security, date).
-- [ ] Before fetching, the app checks local storage first; it only calls external
+- [x] Before fetching, the app checks local storage first; it only calls external
       providers (story 03, and a future security-price provider) for missing dates.
-- [ ] Historical series can be queried for a date range (needed by later report stories).
-- [ ] Integration tests verify a fetch-then-reuse flow makes no second external call for
+- [x] Historical series can be queried for a date range (needed by later report stories).
+- [x] Integration tests verify a fetch-then-reuse flow makes no second external call for
       an already-stored date.
 
 ## Technical Notes
 - This story generalizes the caching behavior for both FX rates and security prices —
   keep the storage schema/interface shared where the shapes match (date, value, source).
+  Implemented as parallel `FxRate`/`SecurityPrice` entities + `IFxRateRepository`/
+  `ISecurityPriceRepository`, each wrapped by an Application-layer caching service
+  (`FxRateService`/`SecurityPriceService`) with the same check-then-fetch-then-store shape.
 
 ## Dependencies / Open Questions
 - Depends on [03-fetch-cross-currency-rates](03-fetch-cross-currency-rates.md).
-- **Open question:** the requirements doc doesn't name a source for security *prices*
-  (only cross-currency rates) — confirm/add a price provider interface here, mirroring
-  `IFxRateProvider`, when implementing.
+- **Resolved:** added `ISecurityPriceProvider` (+ `PriceResult`/`PriceStatus`), mirroring
+  `IFxRateProvider`, and a `SecurityPriceService` caching orchestration against it. No
+  concrete `Data/` price provider exists yet (no source has been chosen) — that's real
+  follow-on work; `SecurityPriceService` is unit-tested against a fake provider and not
+  yet wired into `MauiProgram`/the GUI.

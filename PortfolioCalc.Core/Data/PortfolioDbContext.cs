@@ -15,6 +15,8 @@ public class PortfolioDbContext : DbContext
     public DbSet<Position> Positions => Set<Position>();
     public DbSet<CashTransaction> CashTransactions => Set<CashTransaction>();
     public DbSet<SecurityTransaction> SecurityTransactions => Set<SecurityTransaction>();
+    public DbSet<FxRate> FxRates => Set<FxRate>();
+    public DbSet<SecurityPrice> SecurityPrices => Set<SecurityPrice>();
 
     public PortfolioDbContext(DbContextOptions<PortfolioDbContext> options) : base(options)
     {
@@ -61,6 +63,20 @@ public class PortfolioDbContext : DbContext
             .HasOne(t => t.Position)
             .WithMany()
             .HasForeignKey(t => t.PositionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<FxRate>()
+            .HasIndex(r => new { r.FromCurrency, r.ToCurrency, r.Date })
+            .IsUnique();
+
+        modelBuilder.Entity<SecurityPrice>()
+            .HasIndex(p => new { p.SecurityId, p.Date })
+            .IsUnique();
+
+        modelBuilder.Entity<SecurityPrice>()
+            .HasOne(p => p.Security)
+            .WithMany()
+            .HasForeignKey(p => p.SecurityId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

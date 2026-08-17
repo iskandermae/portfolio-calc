@@ -123,3 +123,18 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   browser stream's read behavior (throws on sync `Read`, only `ReadAsync` works) — a
   fully-seekable, sync-capable `FileStream` in a test can't surface this class of bug at
   all, no matter how thoroughly it's otherwise exercised.
+- **`FxRate` and `SecurityPrice` are separate entities/repositories, not one combined
+  table.** Their shapes match (date, value) but their keys don't (currency pair vs.
+  security id) — splitting per aggregate follows the existing repository-interface
+  convention rather than forcing a shared schema with unused columns for either side.
+  The *caching* logic is what's actually shared: `FxRateService`/`SecurityPriceService`
+  (Application layer) both do check-repository → fetch-from-provider-if-missing →
+  store-if-successful, as parallel implementations rather than a generic base — two
+  call sites didn't justify the complexity of a shared generic abstraction.
+- **`ISecurityPriceProvider` (+ `PriceResult`/`PriceStatus`) exists with no concrete
+  `Data/` implementation yet.** No price data source has been chosen (unlike FX, which
+  has Frankfurter from story 03); the interface and its `SecurityPriceService` caching
+  wrapper were still built now, mirroring `IFxRateProvider`, so the storage schema and
+  caching shape are already in place for whichever provider a future story adds — that
+  story only needs to supply the `Data/` implementation and DI wiring, tested here
+  against a fake provider instead of a real API.

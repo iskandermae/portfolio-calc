@@ -1,9 +1,12 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PortfolioCalc.App.Application.Fx;
 using PortfolioCalc.App.Application.Import.Ibkr;
 using PortfolioCalc.Core.Data;
+using PortfolioCalc.Core.Data.Fx;
 using PortfolioCalc.Core.Data.Import.Ibkr;
 using PortfolioCalc.Core.Data.Repositories;
+using PortfolioCalc.Core.Fx;
 using PortfolioCalc.Core.Import;
 using PortfolioCalc.Core.Repositories;
 
@@ -39,6 +42,10 @@ public static class MauiProgram
 		builder.Services.AddScoped<ISecurityTransactionRepository, SecurityTransactionRepository>();
 		builder.Services.AddScoped<ITransactionImporter, IbkrFlexQueryImporter>();
 		builder.Services.AddScoped<IbkrImportService>();
+
+		builder.Services.AddScoped<IFxRateRepository, FxRateRepository>();
+		builder.Services.AddHttpClient<IFxRateProvider, FrankfurterFxRateProvider>();
+		builder.Services.AddScoped<FxRateService>();
 
 #if DEBUG
 		builder.Services.AddBlazorWebViewDeveloperTools();
