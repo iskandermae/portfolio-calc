@@ -12,6 +12,10 @@ Design decisions and their rationale: [doc/decisions.md](doc/decisions.md) — c
   - assumptions or limitations;
   - existing issues discovered but not fixed in a form of new task.
 
+## Workflow
+
+- Each story is implemented in its own subagent/session, not carried over in the same context as the previous story.
+
 ## Non-obvious domain rules
 
 - Base currency change → reports recompute on the fly from stored FX history, no migration.

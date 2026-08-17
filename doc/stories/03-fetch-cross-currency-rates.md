@@ -5,12 +5,12 @@ Fetch FX rates between a security's trading currency and the base currency from 
 sources, so non-base-currency positions can be valued in base currency.
 
 ## Acceptance Criteria
-- [ ] `Core` defines an `IFxRateProvider` interface (currency pair + date → rate).
-- [ ] At least one concrete `Data/` implementation fetches a real rate for a real
+- [x] `Core` defines an `IFxRateProvider` interface (currency pair + date → rate).
+- [x] At least one concrete `Data/` implementation fetches a real rate for a real
       currency pair.
-- [ ] The provider design supports plugging in different sources per currency (e.g.
+- [x] The provider design supports plugging in different sources per currency (e.g.
       different site/API for EUR vs. JPY) without changing calling code.
-- [ ] Failures (network error, unsupported currency) surface as a clear status rather
+- [x] Failures (network error, unsupported currency) surface as a clear status rather
       than a silent gap in data.
 
 ## Technical Notes

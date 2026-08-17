@@ -99,6 +99,21 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   escape hatch for a database that's beyond what a migration can fix. It's a flag on the
   app itself, not a "go delete this file by hand" instruction, so recovering doesn't
   require knowing where the file lives or using a shell.
+- **`IFxRateProvider` fetches one currency pair for one date; no batch/range method.**
+  Calling code only ever needs "this pair, this date" (a position valuation), so a range API
+  would be speculative. Different sources per currency (e.g. a different provider for a
+  currency Frankfurter doesn't cover) can be added later behind a composite that also
+  implements `IFxRateProvider` — callers stay unaware either way, since they only ever
+  depend on the interface.
+- **`FrankfurterFxRateProvider` (frankfurter.dev, ECB reference rates) is the first/only
+  `IFxRateProvider` implementation.** Free, no API key, no rate limit tier to manage — good
+  enough for a single-user local app. It doesn't cover every currency a broker export might
+  report; that surfaces as `FxRateStatus.UnsupportedCurrency` per call rather than being
+  worked around preemptively with a second provider before a real currency needs one.
+- **`FxRateResult` carries a `FxRateStatus` (`Success`/`UnsupportedCurrency`/`NetworkError`)
+  instead of throwing or returning a nullable rate.** A network failure and an unsupported
+  currency are both real, distinguishable outcomes a caller needs to react to differently
+  (retry vs. skip), not exceptions to catch or a silent gap to notice later.
 - **`ITransactionImporter.ParseAsync` parses via an async `XmlReader` +
   `XDocument.LoadAsync`, never `XDocument.Load(Stream)`.** The GUI hands the importer a
   Blazor `InputFile` stream over the browser/WebView bridge, whose synchronous `Read()`
