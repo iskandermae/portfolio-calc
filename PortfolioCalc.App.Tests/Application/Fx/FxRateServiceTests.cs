@@ -3,7 +3,9 @@ using PortfolioCalc.App.Application.Fx;
 using PortfolioCalc.Core.Data;
 using PortfolioCalc.Core.Data.Fx;
 using PortfolioCalc.Core.Data.Repositories;
+using PortfolioCalc.Core.Domain;
 using PortfolioCalc.Core.Fx;
+using PortfolioCalc.Core.Validation;
 
 namespace PortfolioCalc.App.Tests.Application.Fx;
 
@@ -107,5 +109,114 @@ public class FxRateServiceTests
         var history = await service.GetHistoryAsync("USD", "EUR", KnownPastDate, KnownPastDate);
 
         Assert.Single(history);
+    }
+
+    [Fact]
+    public async Task GetRateAsync_flags_a_new_rate_far_outside_recent_history_as_PendingValidation()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var repository = new FxRateRepository(context);
+        for (var day = 1; day <= 6; day++)
+        {
+            await repository.AddAsync(new FxRate
+            {
+                FromCurrency = "USD", ToCurrency = "EUR",
+                Date = new DateOnly(2026, 1, day), Rate = 0.90m + day * 0.001m,
+            });
+        }
+        var provider = new FakeFxRateProvider(FxRateResult.Ok(5.00m));
+        var service = new FxRateService(repository, provider);
+
+        var result = await service.GetRateAsync("USD", "EUR", new DateOnly(2026, 1, 20));
+
+        Assert.Equal(FxRateStatus.Success, result.Status);
+        Assert.Equal(5.00m, result.Rate);
+        var stored = await context.FxRates.SingleAsync(r => r.Date == new DateOnly(2026, 1, 20));
+        Assert.Equal(ValidationStatus.PendingValidation, stored.Status);
+    }
+
+    [Fact]
+    public async Task GetRateAsync_leaves_a_new_rate_consistent_with_recent_history_as_Valid()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var repository = new FxRateRepository(context);
+        for (var day = 1; day <= 6; day++)
+        {
+            await repository.AddAsync(new FxRate
+            {
+                FromCurrency = "USD", ToCurrency = "EUR",
+                Date = new DateOnly(2026, 1, day), Rate = 0.90m + day * 0.001m,
+            });
+        }
+        var provider = new FakeFxRateProvider(FxRateResult.Ok(0.907m));
+        var service = new FxRateService(repository, provider);
+
+        await service.GetRateAsync("USD", "EUR", new DateOnly(2026, 1, 20));
+
+        var stored = await context.FxRates.SingleAsync(r => r.Date == new DateOnly(2026, 1, 20));
+        Assert.Equal(ValidationStatus.Valid, stored.Status);
+    }
+
+    [Fact]
+    public async Task GetRateAsync_does_not_flag_a_new_rate_when_history_is_insufficient()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var repository = new FxRateRepository(context);
+        var provider = new FakeFxRateProvider(FxRateResult.Ok(500m));
+        var service = new FxRateService(repository, provider);
+
+        await service.GetRateAsync("USD", "EUR", KnownPastDate);
+
+        var stored = await context.FxRates.SingleAsync();
+        Assert.Equal(ValidationStatus.Valid, stored.Status);
+    }
+
+    [Fact]
+    public async Task GetRateAsync_ignores_a_stored_pending_rate_and_fetches_live_instead()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var repository = new FxRateRepository(context);
+        await repository.AddAsync(new FxRate
+        {
+            FromCurrency = "USD", ToCurrency = "EUR", Date = KnownPastDate, Rate = 5.00m,
+            Status = ValidationStatus.PendingValidation,
+        });
+        var provider = new FakeFxRateProvider(FxRateResult.Ok(0.91m));
+        var service = new FxRateService(repository, provider);
+
+        var result = await service.GetRateAsync("USD", "EUR", KnownPastDate);
+
+        Assert.Equal(FxRateStatus.Success, result.Status);
+        Assert.Equal(0.91m, result.Rate);
+        Assert.Equal(1, provider.CallCount);
+        // No second row was inserted for the same pair/date (would violate the unique index).
+        Assert.Single(context.FxRates);
+        var stored = await context.FxRates.SingleAsync();
+        Assert.Equal(ValidationStatus.PendingValidation, stored.Status);
+        Assert.Equal(5.00m, stored.Rate);
+    }
+
+    [Fact]
+    public async Task GetHistoryAsync_excludes_rates_pending_validation()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var repository = new FxRateRepository(context);
+        await repository.AddAsync(new FxRate
+        {
+            FromCurrency = "USD", ToCurrency = "EUR", Date = new DateOnly(2026, 1, 1), Rate = 0.90m,
+            Status = ValidationStatus.Valid,
+        });
+        await repository.AddAsync(new FxRate
+        {
+            FromCurrency = "USD", ToCurrency = "EUR", Date = new DateOnly(2026, 1, 2), Rate = 5.00m,
+            Status = ValidationStatus.PendingValidation,
+        });
+        var service = new FxRateService(repository, new FakeFxRateProvider(FxRateResult.Ok(1m)));
+
+        var history = await service.GetHistoryAsync(
+            "USD", "EUR", new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 2));
+
+        Assert.Single(history);
+        Assert.Equal(0.90m, history[0].Rate);
     }
 }

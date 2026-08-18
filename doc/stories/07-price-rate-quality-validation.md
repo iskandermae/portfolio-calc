@@ -6,16 +6,16 @@ require manual validation before such values are used in calculations — surfac
 need for review as a status message on the main screen.
 
 ## Acceptance Criteria
-- [ ] Each incoming FX rate/price is compared against the recent historical
+- [x] Each incoming FX rate/price is compared against the recent historical
       volatility (stddev-based) of that same series; values outside an expected range are
       flagged as `PendingValidation` instead of `Valid`.
-- [ ] Calculations/reports only use values marked `Valid`; `PendingValidation` values are
+- [x] Calculations/reports only use values marked `Valid`; `PendingValidation` values are
       excluded from valuation and reports until reviewed.
-- [ ] The main screen shows a status message/badge whenever one or more values are
+- [x] The main screen shows a status message/badge whenever one or more values are
       pending validation, with a way to navigate to review them.
-- [ ] A review screen lists pending values and lets the user mark each Valid or reject/
+- [x] A review screen lists pending values and lets the user mark each Valid or reject/
       correct it.
-- [ ] Unit tests cover the stddev-based flagging logic with both normal and anomalous
+- [x] Unit tests cover the stddev-based flagging logic with both normal and anomalous
       synthetic series.
 
 ## Technical Notes

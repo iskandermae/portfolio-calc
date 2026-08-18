@@ -21,4 +21,21 @@ public class SecurityPriceRepository(PortfolioDbContext context) : ISecurityPric
         await context.SaveChangesAsync();
         return price;
     }
+
+    public async Task<IReadOnlyList<SecurityPrice>> GetPendingAsync() =>
+        await context.SecurityPrices
+            .Include(p => p.Security)
+            .Where(p => p.Status == ValidationStatus.PendingValidation)
+            .OrderBy(p => p.Date)
+            .ToListAsync();
+
+    public async Task UpdateStatusAsync(int id, ValidationStatus status, decimal? correctedPrice = null)
+    {
+        var price = await context.SecurityPrices.FindAsync(id)
+            ?? throw new InvalidOperationException($"SecurityPrice {id} not found.");
+        price.Status = status;
+        if (correctedPrice is not null)
+            price.Price = correctedPrice.Value;
+        await context.SaveChangesAsync();
+    }
 }

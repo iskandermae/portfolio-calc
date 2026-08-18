@@ -50,6 +50,11 @@ public static class MauiProgram
 		builder.Services.AddHttpClient<IFxRateProvider, FrankfurterFxRateProvider>();
 		builder.Services.AddScoped<FxRateService>();
 
+		// Registered for the validation-review screen's direct repository reads/writes
+		// (Home.razor/ValidationReview.razor) — no ISecurityPriceProvider/SecurityPriceService
+		// wiring yet since no price data source has been chosen (see doc/decisions.md).
+		builder.Services.AddScoped<ISecurityPriceRepository, SecurityPriceRepository>();
+
 		builder.Services.AddScoped<IAppSettingsRepository, AppSettingsRepository>();
 		builder.Services.AddScoped<BaseCurrencyConversionService>();
 

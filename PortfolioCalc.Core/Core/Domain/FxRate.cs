@@ -9,4 +9,5 @@ public class FxRate
     public required string ToCurrency { get; set; }
     public DateOnly Date { get; set; }
     public decimal Rate { get; set; }
+    public ValidationStatus Status { get; set; } = ValidationStatus.Valid;
 }

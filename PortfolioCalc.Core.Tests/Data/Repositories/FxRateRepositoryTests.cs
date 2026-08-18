@@ -64,4 +64,83 @@ public class FxRateRepositoryTests
         Assert.Single(result);
         Assert.Equal(0.91m, result[0].Rate);
     }
+
+    [Fact]
+    public async Task AddAsync_defaults_a_new_rate_to_Valid_status()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var repository = new FxRateRepository(context);
+
+        var added = await repository.AddAsync(new FxRate
+        {
+            FromCurrency = "USD", ToCurrency = "EUR", Date = new DateOnly(2026, 1, 15), Rate = 0.91m,
+        });
+
+        Assert.Equal(ValidationStatus.Valid, added.Status);
+    }
+
+    [Fact]
+    public async Task GetPendingAsync_returns_only_rates_pending_validation()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var repository = new FxRateRepository(context);
+        await repository.AddAsync(new FxRate
+        {
+            FromCurrency = "USD", ToCurrency = "EUR", Date = new DateOnly(2026, 1, 1), Rate = 0.90m,
+            Status = ValidationStatus.Valid,
+        });
+        var pending = await repository.AddAsync(new FxRate
+        {
+            FromCurrency = "USD", ToCurrency = "EUR", Date = new DateOnly(2026, 2, 1), Rate = 5.00m,
+            Status = ValidationStatus.PendingValidation,
+        });
+        await repository.AddAsync(new FxRate
+        {
+            FromCurrency = "USD", ToCurrency = "EUR", Date = new DateOnly(2026, 3, 1), Rate = 0.92m,
+            Status = ValidationStatus.Rejected,
+        });
+
+        var result = await repository.GetPendingAsync();
+
+        Assert.Single(result);
+        Assert.Equal(pending.Id, result[0].Id);
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_marks_a_rate_Valid_and_applies_a_correction()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var repository = new FxRateRepository(context);
+        var rate = await repository.AddAsync(new FxRate
+        {
+            FromCurrency = "USD", ToCurrency = "EUR", Date = new DateOnly(2026, 1, 1), Rate = 5.00m,
+            Status = ValidationStatus.PendingValidation,
+        });
+
+        await repository.UpdateStatusAsync(rate.Id, ValidationStatus.Valid, correctedRate: 0.91m);
+
+        var updated = await repository.GetAsync("USD", "EUR", new DateOnly(2026, 1, 1));
+        Assert.NotNull(updated);
+        Assert.Equal(ValidationStatus.Valid, updated.Status);
+        Assert.Equal(0.91m, updated.Rate);
+    }
+
+    [Fact]
+    public async Task UpdateStatusAsync_can_reject_without_changing_the_rate()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var repository = new FxRateRepository(context);
+        var rate = await repository.AddAsync(new FxRate
+        {
+            FromCurrency = "USD", ToCurrency = "EUR", Date = new DateOnly(2026, 1, 1), Rate = 5.00m,
+            Status = ValidationStatus.PendingValidation,
+        });
+
+        await repository.UpdateStatusAsync(rate.Id, ValidationStatus.Rejected);
+
+        var updated = await repository.GetAsync("USD", "EUR", new DateOnly(2026, 1, 1));
+        Assert.NotNull(updated);
+        Assert.Equal(ValidationStatus.Rejected, updated.Status);
+        Assert.Equal(5.00m, updated.Rate);
+    }
 }

@@ -1,0 +1,130 @@
+@page "/validation-review"
+@using PortfolioCalc.Core.Domain
+@using PortfolioCalc.Core.Repositories
+@inject IFxRateRepository FxRateRepository
+@inject ISecurityPriceRepository SecurityPriceRepository
+
+<h1>Validation Review</h1>
+
+<p>Values that fell outside the recent historical range for their series — see
+   doc/stories/07-price-rate-quality-validation.md. Accept a value as-is, correct it, or
+   reject it; rejected/pending values are not used in calculations until accepted.</p>
+
+<h2>FX Rates (@_pendingRates.Count)</h2>
+@if (_pendingRates.Count == 0)
+{
+    <p><em>Nothing pending.</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Pair</th>
+                <th>Date</th>
+                <th>Rate</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var rate in _pendingRates)
+            {
+                <tr>
+                    <td>@rate.FromCurrency / @rate.ToCurrency</td>
+                    <td>@rate.Date</td>
+                    <td>
+                        <input type="number" step="any" class="form-control" style="max-width: 10rem"
+                               @bind="_editedRateValues[rate.Id]" />
+                    </td>
+                    <td>
+                        <button class="btn btn-success btn-sm" @onclick="() => AcceptRateAsync(rate)">Accept</button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => RejectRateAsync(rate)">Reject</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h2>Security Prices (@_pendingPrices.Count)</h2>
+@if (_pendingPrices.Count == 0)
+{
+    <p><em>Nothing pending.</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Security</th>
+                <th>Date</th>
+                <th>Price</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var price in _pendingPrices)
+            {
+                <tr>
+                    <td>@price.Security.Symbol</td>
+                    <td>@price.Date</td>
+                    <td>
+                        <input type="number" step="any" class="form-control" style="max-width: 10rem"
+                               @bind="_editedPriceValues[price.Id]" />
+                    </td>
+                    <td>
+                        <button class="btn btn-success btn-sm" @onclick="() => AcceptPriceAsync(price)">Accept</button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => RejectPriceAsync(price)">Reject</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<FxRate> _pendingRates = [];
+    private IReadOnlyList<SecurityPrice> _pendingPrices = [];
+    private readonly Dictionary<int, decimal> _editedRateValues = [];
+    private readonly Dictionary<int, decimal> _editedPriceValues = [];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _pendingRates = await FxRateRepository.GetPendingAsync();
+        _pendingPrices = await SecurityPriceRepository.GetPendingAsync();
+        foreach (var rate in _pendingRates)
+            _editedRateValues[rate.Id] = rate.Rate;
+        foreach (var price in _pendingPrices)
+            _editedPriceValues[price.Id] = price.Price;
+    }
+
+    private async Task AcceptRateAsync(FxRate rate)
+    {
+        var edited = _editedRateValues[rate.Id];
+        var correctedRate = edited == rate.Rate ? null : (decimal?)edited;
+        await FxRateRepository.UpdateStatusAsync(rate.Id, ValidationStatus.Valid, correctedRate);
+        await LoadAsync();
+    }
+
+    private async Task RejectRateAsync(FxRate rate)
+    {
+        await FxRateRepository.UpdateStatusAsync(rate.Id, ValidationStatus.Rejected);
+        await LoadAsync();
+    }
+
+    private async Task AcceptPriceAsync(SecurityPrice price)
+    {
+        var edited = _editedPriceValues[price.Id];
+        var correctedPrice = edited == price.Price ? null : (decimal?)edited;
+        await SecurityPriceRepository.UpdateStatusAsync(price.Id, ValidationStatus.Valid, correctedPrice);
+        await LoadAsync();
+    }
+
+    private async Task RejectPriceAsync(SecurityPrice price)
+    {
+        await SecurityPriceRepository.UpdateStatusAsync(price.Id, ValidationStatus.Rejected);
+        await LoadAsync();
+    }
+}

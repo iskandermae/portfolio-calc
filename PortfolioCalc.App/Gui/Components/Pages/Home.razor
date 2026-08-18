@@ -1,5 +1,26 @@
-﻿@page "/"
+@page "/"
+@using PortfolioCalc.Core.Repositories
+@inject IFxRateRepository FxRateRepository
+@inject ISecurityPriceRepository SecurityPriceRepository
 
 <h1>Hello, world!</h1>
 
 Welcome to your new app.
+
+@if (_pendingCount > 0)
+{
+    <div class="alert alert-warning mt-3">
+        @_pendingCount value(s) pending validation — <a href="/validation-review">Review</a>
+    </div>
+}
+
+@code {
+    private int _pendingCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var pendingRates = await FxRateRepository.GetPendingAsync();
+        var pendingPrices = await SecurityPriceRepository.GetPendingAsync();
+        _pendingCount = pendingRates.Count + pendingPrices.Count;
+    }
+}

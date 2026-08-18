@@ -168,3 +168,43 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   the World Bank's "EMU" euro-area aggregate) — callers stay in currency terms, matching
   every other rate/price interface in this codebase, and the mapping is an implementation
   detail of this one provider rather than a general currency-to-country concept.
+- **`FxRate`/`SecurityPrice` gain a `ValidationStatus` column (`Valid`/`PendingValidation`/
+  `Rejected`, `Valid = 0`) rather than a separate validation table** — story 07 extends the
+  existing schema per its own Technical Note. The migration defaults existing rows to
+  `Valid` (the enum's zero value): pre-story-07 rows were already being used unreviewed, and
+  there's no recent-history context left to judge them against retroactively, so leaving
+  them trusted is the only defensible backfill.
+- **The stddev anomaly check (`AnomalyDetector` in `Core/Validation/`) is a pure static
+  function taking a history list and a candidate value, kept independent of the DB/service
+  layer** — mirrors the general principle (story 11's day-count solver call-out) of
+  isolating pure calc logic so it's directly unit-testable against synthetic series.
+  Constants: `MinHistoryPoints = 5` (fewer points can't produce a meaningful stddev, so a
+  new value is never flagged against too-thin a baseline — including a series' very first
+  value); `ThresholdStdDevs = 3.0` (the conventional outlier cutoff, ~99.7% of normally
+  distributed values fall within 3 stddevs — catches real jumps without flagging ordinary
+  day-to-day volatility); `TrailingWindowDays = 90` (a few months of history is enough to
+  characterize current volatility without diluting it with a stale, possibly
+  different-regime past). A perfectly flat history (stddev 0) flags any change at all —
+  the only sane interpretation when there's no observed variation to compare against.
+- **`FxRateService`/`SecurityPriceService` classify a newly-fetched value using only the
+  *valid* rows in its trailing window** (pending/rejected rows already in that window are
+  excluded from the mean/stddev calculation) — an unreviewed or bad prior value shouldn't
+  be allowed to normalize the baseline that judges the next one.
+- **When the only stored row for an exact date is `PendingValidation`/`Rejected`,
+  `GetRateAsync`/`GetPriceAsync` neither return it nor re-insert a second row for that
+  date** (the unique pair/date and security/date indexes would reject a duplicate) — they
+  fetch straight from the live provider and return that instead, leaving the stored row
+  untouched for manual review. This keeps a calculation usable in the meantime without
+  silently trusting an unreviewed value or failing outright. `GetHistoryAsync` on both
+  services filters to `Valid` rows, since a stored range read (unlike the live-fetch path)
+  has no live fallback to reach for.
+- **Rejecting/correcting a pending value reuses the same status field and row** —
+  `IFxRateRepository`/`ISecurityPriceRepository.UpdateStatusAsync(id, status,
+  correctedValue?)` sets the status and optionally overwrites the stored value in one call,
+  rather than modeling a correction as a new row or a separate audit table. This story only
+  needs "accept as-is, correct the value, or reject" — no history of what a value used to
+  be before correction, so there's nothing yet to justify a separate audit trail.
+- **The validation-review page (`ValidationReview.razor`) calls `IFxRateRepository`/
+  `ISecurityPriceRepository` directly, not through an Application service** — listing
+  pending rows and updating a status/value is plain CRUD per CLAUDE.md's Gui/Application
+  boundary; the actual logic (the stddev classification) lives in the services, not here.
