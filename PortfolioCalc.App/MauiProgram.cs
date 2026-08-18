@@ -3,14 +3,18 @@ using Microsoft.Extensions.Logging;
 using PortfolioCalc.App.Application.Fx;
 using PortfolioCalc.App.Application.Import.Ibkr;
 using PortfolioCalc.App.Application.Inflation;
+using PortfolioCalc.App.Application.Positions;
+using PortfolioCalc.App.Application.Prices;
 using PortfolioCalc.Core.Data;
 using PortfolioCalc.Core.Data.Fx;
 using PortfolioCalc.Core.Data.Import.Ibkr;
 using PortfolioCalc.Core.Data.Inflation;
+using PortfolioCalc.Core.Data.Prices;
 using PortfolioCalc.Core.Data.Repositories;
 using PortfolioCalc.Core.Fx;
 using PortfolioCalc.Core.Import;
 using PortfolioCalc.Core.Inflation;
+using PortfolioCalc.Core.Prices;
 using PortfolioCalc.Core.Repositories;
 
 namespace PortfolioCalc.App;
@@ -50,13 +54,13 @@ public static class MauiProgram
 		builder.Services.AddHttpClient<IFxRateProvider, FrankfurterFxRateProvider>();
 		builder.Services.AddScoped<FxRateService>();
 
-		// Registered for the validation-review screen's direct repository reads/writes
-		// (Home.razor/ValidationReview.razor) — no ISecurityPriceProvider/SecurityPriceService
-		// wiring yet since no price data source has been chosen (see doc/decisions.md).
 		builder.Services.AddScoped<ISecurityPriceRepository, SecurityPriceRepository>();
+		builder.Services.AddHttpClient<ISecurityPriceProvider, YahooFinanceSecurityPriceProvider>();
+		builder.Services.AddScoped<SecurityPriceService>();
 
 		builder.Services.AddScoped<IAppSettingsRepository, AppSettingsRepository>();
 		builder.Services.AddScoped<BaseCurrencyConversionService>();
+		builder.Services.AddScoped<PositionValuationService>();
 
 		builder.Services.AddScoped<IUiLayoutSettingRepository, UiLayoutSettingRepository>();
 

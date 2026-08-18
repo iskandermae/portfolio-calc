@@ -8,11 +8,9 @@ namespace PortfolioCalc.App.Application.Prices;
 /// <summary>Caches fetched security prices locally so the same security/date is never
 /// fetched twice from an external provider — see
 /// doc/stories/04-store-reuse-prices-rates.md. Mirrors <see
-/// cref="PortfolioCalc.App.Application.Fx.FxRateService"/>; not yet wired into the app
-/// because no concrete <see cref="ISecurityPriceProvider"/> exists (no price data source
-/// has been chosen). Newly-stored prices are checked against recent history for
-/// statistical anomalies and excluded from normal reads until reviewed — see
-/// doc/stories/07-price-rate-quality-validation.md.</summary>
+/// cref="PortfolioCalc.App.Application.Fx.FxRateService"/>. Newly-stored prices are checked
+/// against recent history for statistical anomalies and excluded from normal reads until
+/// reviewed — see doc/stories/07-price-rate-quality-validation.md.</summary>
 public class SecurityPriceService(ISecurityPriceRepository repository, ISecurityPriceProvider provider)
 {
     public async Task<PriceResult> GetPriceAsync(

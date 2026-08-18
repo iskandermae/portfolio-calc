@@ -23,7 +23,7 @@ re-fetched, reducing external calls and giving reports a stable historical serie
 ## Dependencies / Open Questions
 - Depends on [03-fetch-cross-currency-rates](03-fetch-cross-currency-rates.md).
 - **Resolved:** added `ISecurityPriceProvider` (+ `PriceResult`/`PriceStatus`), mirroring
-  `IFxRateProvider`, and a `SecurityPriceService` caching orchestration against it. No
-  concrete `Data/` price provider exists yet (no source has been chosen) — that's real
-  follow-on work; `SecurityPriceService` is unit-tested against a fake provider and not
-  yet wired into `MauiProgram`/the GUI.
+  `IFxRateProvider`, and a `SecurityPriceService` caching orchestration against it.
+- **Resolved (story 09 prerequisite):** the concrete `Data/` price provider is
+  `YahooFinanceSecurityPriceProvider` (Yahoo Finance's public chart endpoint), now wired
+  into `MauiProgram`/the GUI — see doc/decisions.md.

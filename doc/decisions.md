@@ -222,3 +222,54 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   display columns for every row, and a report screen listing everything is the first real
   caller that needs "all rows," unlike the existing range/security/account-scoped
   queries.
+- **`YahooFinanceSecurityPriceProvider` (Yahoo Finance's public, undocumented "chart"
+  endpoint — the same one `yfinance` wraps) is the first/only `ISecurityPriceProvider`
+  implementation**, closing the open question left by story 04. Chosen over Stooq's CSV
+  quote endpoint: Stooq requires a real, working exchange-suffix mapping from this app's
+  plain `Symbol` to a Stooq ticker (e.g. `.US`) before it can be trusted for anything beyond
+  US tickers, whereas Yahoo's plain `Security.Symbol` already works unmodified for
+  US-listed tickers (this app's common case, since transactions are imported from a US
+  broker) with no mapping step to get wrong. The endpoint requires a browser-like
+  `User-Agent` header (Yahoo's edge otherwise returns 429 on the very first request — a bot
+  filter, not a rate limit) and returns a structured JSON error body even on a 404 status,
+  so the response body is always parsed before checking the status code. Confirmed against
+  real tickers (AAPL, SPY) and a nonexistent one before committing.
+- **Non-US listings and any symbol/currency Yahoo doesn't recognize are a per-call
+  `PriceStatus.UnsupportedSecurity`, not worked around with a mapping table up front** —
+  mirrors the `FrankfurterFxRateProvider`/`WorldBankInflationRateProvider` precedent of
+  accepting a real, known coverage gap rather than pre-building for exchanges no story
+  needs priced yet.
+- **One specific instance of that gap is handled rather than left unsupported: Yahoo quotes
+  London-listed securities in pence (`meta.currency` = `"GBp"`), not pounds.** A request for
+  a security whose `Currency` is `GBP` (already in `SupportedCurrencies.Codes`, and a pair
+  `FrankfurterFxRateProvider` already prices against USD/EUR) against a pence-quoted symbol
+  converts the close price ÷100 on the fly instead of being rejected as a currency mismatch
+  — worth the small amount of special-casing because GBP is a currency this app already
+  models end-to-end (base-currency picker, FX conversion), unlike an arbitrary unmapped
+  exchange suffix. The comparison distinguishing `"GBp"` from `"GBP"` is ordinal/case-sensitive
+  on purpose — Yahoo's two codes differ only by case and mean different things (pence vs.
+  pounds), so a case-insensitive check would silently misprice a plain GBP-quoted security by
+  100x. Confirmed for real against VOD.L before writing the conversion.
+- **`PositionValuationService` (Application layer) derives current holdings and values
+  them in base currency for the portfolio value report (story 09).** Position derivation
+  (`GetCurrentPositionsAsync`) is exposed as its own public step, separate from valuation,
+  per the story's Technical Note that later reports (10/11) will need "what's currently
+  held" without necessarily wanting a valuation alongside it — net quantity per position is
+  Buy/TransferIn minus Sell quantities (Dividend/Tax never carry a quantity), and a fully
+  sold position (net quantity == 0) is dropped rather than shown at zero.
+- **"Current price"/"latest valid FX rate" for the portfolio value report resolves by
+  walking backwards up to 7 calendar days from the requested as-of date, using the first
+  `Success` result.** Prices and FX rates are on-demand-fetched series with real gaps
+  (weekends, holidays, a source with no data yet for "today"), and `SecurityPriceService`/
+  `FxRateService` only expose exact-date lookups — a general "as-of" resolution system
+  wasn't needed, just enough lookback to clear a single holiday weekend without walking
+  back so far the figure stops being "current." No caller existed yet that needed this, so
+  it lives in `PositionValuationService`, not as a new method on the two services.
+- **A position whose price or FX conversion doesn't come back `Success` is excluded from
+  the portfolio value report's grand total and visually flagged, rather than shown with a
+  caveat alongside a number.** `SecurityPriceService`/`FxRateService.GetPriceAsync`/
+  `GetRateAsync` already refuse to return a stored pending/rejected value (story 07) and
+  fetch live instead — so by the time `PositionValuationService` sees a non-`Success`
+  status, that's a real, current failure (unsupported security, network error, or the live
+  refetch itself came back pending/unusable), not a stale flag to second-guess; there's
+  nothing left to reuse into an inline caveat, only a hole to leave out of the sum.
