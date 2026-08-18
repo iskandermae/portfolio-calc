@@ -24,10 +24,10 @@ public class SecurityPriceService(ISecurityPriceRepository repository, ISecurity
             if (stored.Status == ValidationStatus.Valid)
                 return PriceResult.Ok(stored.Price);
 
-            return await provider.GetPriceAsync(security.Symbol, security.Currency, date, cancellationToken);
+            return await provider.GetPriceAsync(security.Symbol, security.Currency, date, security.Exchange, cancellationToken);
         }
 
-        var fetched = await provider.GetPriceAsync(security.Symbol, security.Currency, date, cancellationToken);
+        var fetched = await provider.GetPriceAsync(security.Symbol, security.Currency, date, security.Exchange, cancellationToken);
         if (fetched.Status == PriceStatus.Success)
         {
             var status = await ClassifyAsync(security.Id, date, fetched.Price!.Value);

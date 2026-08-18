@@ -5,54 +5,68 @@
 @inject ISecurityTransactionRepository SecurityTransactionRepository
 @inject ICashTransactionRepository CashTransactionRepository
 @inject IUiLayoutSettingRepository LayoutRepository
+@inject ILogger<TransactionsReport> Logger
 
 <h1>Transactions</h1>
 
-<p>
-    <strong>Columns:</strong>
-    @foreach (var column in _columns)
-    {
-        <span class="me-3">
-            <input type="checkbox" id="@("col-" + column.Key)" checked="@column.Visible"
-                   @onchange="e => ToggleColumnAsync(column, (bool)e.Value!)" />
-            <label for="@("col-" + column.Key)">@column.Label</label>
-            <button class="btn btn-sm btn-link p-0" title="Move left" disabled="@(_columns.IndexOf(column) == 0)"
-                    @onclick="() => MoveColumnAsync(column, -1)">&larr;</button>
-            <button class="btn btn-sm btn-link p-0" title="Move right" disabled="@(_columns.IndexOf(column) == _columns.Count - 1)"
-                    @onclick="() => MoveColumnAsync(column, 1)">&rarr;</button>
-        </span>
-    }
-</p>
-
-<table class="table">
-    <thead>
-        <tr>
-            @foreach (var column in _columns.Where(c => c.Visible))
-            {
-                <th style="cursor: pointer" @onclick="() => SortByAsync(column.Key)">
-                    @column.Label@(_sortKey == column.Key ? (_sortDescending ? " ▼" : " ▲") : "")
-                </th>
-            }
-        </tr>
-    </thead>
-    <tbody>
-        @foreach (var row in _sortedRows)
+@if (_error is not null)
+{
+    <p class="text-danger">@_error</p>
+}
+else
+{
+    <p>
+        <strong>Columns:</strong>
+        @foreach (var column in _columns)
         {
+            <span class="me-3">
+                <input type="checkbox" id="@("col-" + column.Key)" checked="@column.Visible"
+                       @onchange="e => ToggleColumnAsync(column, (bool)e.Value!)" />
+                <label for="@("col-" + column.Key)">@column.Label</label>
+                <button class="btn btn-sm btn-link p-0" title="Move left" disabled="@(_columns.IndexOf(column) == 0)"
+                        @onclick="() => MoveColumnAsync(column, -1)">&larr;</button>
+                <button class="btn btn-sm btn-link p-0" title="Move right" disabled="@(_columns.IndexOf(column) == _columns.Count - 1)"
+                        @onclick="() => MoveColumnAsync(column, 1)">&rarr;</button>
+            </span>
+        }
+    </p>
+
+    <p>
+        <input type="checkbox" id="show-secondary" checked="@_showSecondary"
+               @onchange="e => ToggleShowSecondaryAsync((bool)e.Value!)" />
+        <label for="show-secondary">Show income/fee transactions too (Tax, Interest, Dividend)</label>
+    </p>
+
+    <table class="table">
+        <thead>
             <tr>
                 @foreach (var column in _columns.Where(c => c.Visible))
                 {
-                    <td>@CellValue(row, column.Key)</td>
+                    <th style="cursor: pointer" @onclick="() => SortByAsync(column.Key)">
+                        @column.Label@(_sortKey == column.Key ? (_sortDescending ? " ▼" : " ▲") : "")
+                    </th>
                 }
             </tr>
-        }
-    </tbody>
-</table>
+        </thead>
+        <tbody>
+            @foreach (var row in _sortedRows)
+            {
+                <tr>
+                    @foreach (var column in _columns.Where(c => c.Visible))
+                    {
+                        <td class="@(IsNumericColumn(column.Key) ? "text-end" : "")">@FormatCell(row, column.Key)</td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+}
 
 @code {
     private const string ScreenKey = "TransactionsReport";
 
     private record TransactionRow(
-        DateOnly Date, string Kind, string Account, string? Security,
+        DateOnly Date, string Kind, TransactionCategory Category, string Account, string? Security,
         decimal? Quantity, decimal Amount, string Currency, decimal? Fee, string? Note);
 
     private class ColumnState
@@ -73,6 +87,11 @@
         public List<SavedColumn> Columns { get; set; } = [];
         public string? SortKey { get; set; }
         public bool SortDescending { get; set; }
+
+        /// <summary>Added after this screen's layout was first shipped — missing in
+        /// already-saved JSON deserializes to false (System.Text.Json's default for a
+        /// bool it doesn't find), which is also this filter's intended default.</summary>
+        public bool ShowSecondary { get; set; }
     }
 
     private List<ColumnState> _columns =
@@ -92,11 +111,21 @@
     private IReadOnlyList<TransactionRow> _sortedRows = [];
     private string _sortKey = "Date";
     private bool _sortDescending;
+    private bool _showSecondary;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadLayoutAsync();
-        await LoadRowsAsync();
+        try
+        {
+            await LoadLayoutAsync();
+            await LoadRowsAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load the transactions report.");
+            _error = "Could not load transactions. See the Logs page for details.";
+        }
     }
 
     private async Task LoadLayoutAsync()
@@ -127,6 +156,7 @@
 
         _sortKey = layout.SortKey ?? _sortKey;
         _sortDescending = layout.SortDescending;
+        _showSecondary = layout.ShowSecondary;
     }
 
     private async Task SaveLayoutAsync()
@@ -136,6 +166,7 @@
             Columns = _columns.Select(c => new SavedColumn { Key = c.Key, Visible = c.Visible }).ToList(),
             SortKey = _sortKey,
             SortDescending = _sortDescending,
+            ShowSecondary = _showSecondary,
         };
         await LayoutRepository.SaveAsync(ScreenKey, JsonSerializer.Serialize(layout));
     }
@@ -147,11 +178,13 @@
 
         var rows = securityTransactions
             .Select(t => new TransactionRow(
-                t.Date, t.Type.ToString(), t.Position!.Account!.Name, t.Position.Security!.Symbol,
+                t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
+                t.Position!.Account!.Name, t.Position.Security!.Symbol,
                 t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note))
             .Concat(cashTransactions
                 .Select(t => new TransactionRow(
-                    t.Date, t.Type.ToString(), t.Account!.Name, null,
+                    t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
+                    t.Account!.Name, null,
                     null, t.Amount, t.Currency, t.FeeAmount, t.Note)))
             .ToList();
 
@@ -161,17 +194,19 @@
 
     private void ApplySort()
     {
+        var filtered = _rows.Where(r => _showSecondary || r.Category == TransactionCategory.Primary);
+
         IEnumerable<TransactionRow> ordered = _sortKey switch
         {
-            "Kind" => _rows.OrderBy(r => r.Kind),
-            "Account" => _rows.OrderBy(r => r.Account),
-            "Security" => _rows.OrderBy(r => r.Security),
-            "Quantity" => _rows.OrderBy(r => r.Quantity),
-            "Amount" => _rows.OrderBy(r => r.Amount),
-            "Currency" => _rows.OrderBy(r => r.Currency),
-            "Fee" => _rows.OrderBy(r => r.Fee),
-            "Note" => _rows.OrderBy(r => r.Note),
-            _ => _rows.OrderBy(r => r.Date),
+            "Kind" => filtered.OrderBy(r => r.Kind),
+            "Account" => filtered.OrderBy(r => r.Account),
+            "Security" => filtered.OrderBy(r => r.Security),
+            "Quantity" => filtered.OrderBy(r => r.Quantity),
+            "Amount" => filtered.OrderBy(r => r.Amount),
+            "Currency" => filtered.OrderBy(r => r.Currency),
+            "Fee" => filtered.OrderBy(r => r.Fee),
+            "Note" => filtered.OrderBy(r => r.Note),
+            _ => filtered.OrderBy(r => r.Date),
         };
         _sortedRows = (_sortDescending ? ordered.Reverse() : ordered).ToList();
     }
@@ -195,6 +230,13 @@
         await SaveLayoutAsync();
     }
 
+    private async Task ToggleShowSecondaryAsync(bool show)
+    {
+        _showSecondary = show;
+        ApplySort();
+        await SaveLayoutAsync();
+    }
+
     private async Task MoveColumnAsync(ColumnState column, int direction)
     {
         var index = _columns.IndexOf(column);
@@ -207,17 +249,30 @@
         await SaveLayoutAsync();
     }
 
-    private static object? CellValue(TransactionRow row, string key) => key switch
+    private static bool IsNumericColumn(string key) => key is "Quantity" or "Amount" or "Fee";
+
+    private static string FormatCell(TransactionRow row, string key) => key switch
     {
-        "Date" => row.Date,
+        "Date" => row.Date.ToString("yyyy-MM-dd"),
         "Kind" => row.Kind,
         "Account" => row.Account,
-        "Security" => row.Security,
-        "Quantity" => row.Quantity,
-        "Amount" => row.Amount,
+        "Security" => row.Security ?? "",
+        "Quantity" => FormatQuantity(row.Quantity),
+        "Amount" => row.Amount.ToString("N2"),
         "Currency" => row.Currency,
-        "Fee" => row.Fee,
-        "Note" => row.Note,
-        _ => null,
+        "Fee" => row.Fee?.ToString("N2") ?? "",
+        "Note" => row.Note ?? "",
+        _ => "",
     };
+
+    /// <summary>No decimal places for a whole number (e.g. "143"), exactly 2 otherwise
+    /// (e.g. "142.50") — matches this project's existing "N2" numeric convention
+    /// (PortfolioValueReport.razor) while not padding whole-share quantities.</summary>
+    private static string FormatQuantity(decimal? quantity)
+    {
+        if (quantity is null)
+            return "";
+        var value = quantity.Value;
+        return value == Math.Truncate(value) ? value.ToString("N0") : value.ToString("N2");
+    }
 }

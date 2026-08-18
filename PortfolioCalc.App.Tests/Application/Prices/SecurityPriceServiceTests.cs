@@ -26,7 +26,8 @@ public class SecurityPriceServiceTests
         public int CallCount { get; private set; }
 
         public Task<PriceResult> GetPriceAsync(
-            string symbol, string currency, DateOnly date, CancellationToken cancellationToken = default)
+            string symbol, string currency, DateOnly date, string? exchange = null,
+            CancellationToken cancellationToken = default)
         {
             CallCount++;
             return Task.FromResult(result);

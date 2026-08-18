@@ -18,6 +18,9 @@ public class FxRateRepository(PortfolioDbContext context) : IFxRateRepository
             .OrderBy(r => r.Date)
             .ToListAsync();
 
+    public async Task<IReadOnlyList<FxRate>> GetAllAsync() =>
+        await context.FxRates.OrderByDescending(r => r.Date).ToListAsync();
+
     public async Task<FxRate> AddAsync(FxRate rate)
     {
         context.FxRates.Add(rate);

@@ -2,10 +2,15 @@
 @using PortfolioCalc.App.Application.Positions
 @using PortfolioValueReportModel = PortfolioCalc.App.Application.Positions.PortfolioValueReport
 @inject PositionValuationService PositionValuationService
+@inject ILogger<PortfolioValueReport> Logger
 
 <h1>Current Portfolio Value</h1>
 
-@if (_report is null)
+@if (_error is not null)
+{
+    <p class="text-danger">@_error</p>
+}
+else if (_report is null)
 {
     <p><em>Loading...</em></p>
 }
@@ -64,10 +69,19 @@ else
 
 @code {
     private PortfolioValueReportModel? _report;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        _report = await PositionValuationService.GetCurrentValueAsync(today);
+        try
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            _report = await PositionValuationService.GetCurrentValueAsync(today);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load the portfolio value report.");
+            _error = "Could not load the portfolio value report. See the Logs page for details.";
+        }
     }
 }

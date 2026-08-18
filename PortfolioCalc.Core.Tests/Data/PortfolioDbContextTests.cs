@@ -65,7 +65,10 @@ public class PortfolioDbContextTests
             context.Securities.Add(new Security { Symbol = "AAPL", Name = "AAPL", Currency = "USD" });
             var thrown = Assert.Throws<DbUpdateException>(() => context.SaveChanges());
             Assert.IsType<SqliteException>(thrown.InnerException);
-            Assert.Contains("no column named Symbol", thrown.InnerException!.Message);
+            // Which specific missing column SQLite names first depends on the current
+            // model's column order (e.g. "Symbol" vs. the later-added "Exchange") — the
+            // point being demonstrated is that stale schema throws at all, not which column.
+            Assert.Contains("no column named", thrown.InnerException!.Message);
         }
         finally
         {

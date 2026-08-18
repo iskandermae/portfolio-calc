@@ -66,7 +66,11 @@ public class IbkrImportService(
                 .Where(r => r.Get("type") == CashTypeWithholdingTax)
                 .Sum(r => ParseDecimal(r.Get("amount")));
 
-            var security = await ResolveSecurityAsync(group.Key.SecuritySymbol, group.Key.Currency);
+            // All rows in a (Security, Date) group are the same security; the first
+            // non-empty listingExchange seen among them is authoritative (see
+            // ResolveSecurityAsync).
+            var exchange = rows.Select(r => r.Get("listingExchange")).FirstOrDefault(e => !string.IsNullOrEmpty(e));
+            var security = await ResolveSecurityAsync(group.Key.SecuritySymbol, group.Key.Currency, exchange);
             var position = await ResolvePositionAsync(account, security);
 
             if (grossDividend != 0)
@@ -154,7 +158,7 @@ public class IbkrImportService(
             return;
         }
 
-        var security = await ResolveSecurityAsync(securitySymbol, currency);
+        var security = await ResolveSecurityAsync(securitySymbol, currency, row.Get("listingExchange"));
         var position = await ResolvePositionAsync(account, security);
 
         var quantity = Math.Abs(ParseDecimal(row.Get("quantity")));
@@ -259,7 +263,7 @@ public class IbkrImportService(
         var quantity = Math.Abs(ParseDecimal(row.Get("quantity")));
         var date = ParseDate(row.Get("dateTime"));
 
-        var security = await ResolveSecurityAsync(securitySymbol, currency);
+        var security = await ResolveSecurityAsync(securitySymbol, currency, row.Get("listingExchange"));
         var position = await ResolvePositionAsync(account, security);
 
         // TransferIn always has Amount = 0, so the dedup key (Position/Amount/Date/
@@ -296,9 +300,34 @@ public class IbkrImportService(
         return existing.Any(t => t.Amount == amount && t.Date == date && t.Currency == currency);
     }
 
-    private async Task<Security> ResolveSecurityAsync(string securitySymbol, string currency) =>
-        await securityRepository.GetBySymbolAndCurrencyAsync(securitySymbol, currency)
-        ?? await securityRepository.AddAsync(new Security { Symbol = securitySymbol, Currency = currency, Name = securitySymbol });
+    /// <summary>Resolves/auto-creates a Security, threading through the row's raw
+    /// listingExchange code (if present). A newly-created Security gets it directly; an
+    /// existing Security with no Exchange recorded yet (e.g. imported before this field
+    /// existed) is backfilled in place. An existing Security that already has an
+    /// Exchange is left untouched — the first non-empty value ever seen is authoritative,
+    /// so a later row can't flip-flop it. See doc/decisions.md.</summary>
+    private async Task<Security> ResolveSecurityAsync(string securitySymbol, string currency, string? exchange)
+    {
+        var existing = await securityRepository.GetBySymbolAndCurrencyAsync(securitySymbol, currency);
+        if (existing is null)
+        {
+            return await securityRepository.AddAsync(new Security
+            {
+                Symbol = securitySymbol,
+                Currency = currency,
+                Name = securitySymbol,
+                Exchange = string.IsNullOrEmpty(exchange) ? null : exchange,
+            });
+        }
+
+        if (string.IsNullOrEmpty(existing.Exchange) && !string.IsNullOrEmpty(exchange))
+        {
+            existing.Exchange = exchange;
+            await securityRepository.UpdateAsync(existing);
+        }
+
+        return existing;
+    }
 
     private async Task<Position> ResolvePositionAsync(Account account, Security security) =>
         await positionRepository.GetByAccountAndSecurityAsync(account.Id, security.Id)

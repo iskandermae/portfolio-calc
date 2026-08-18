@@ -6,6 +6,11 @@ public interface IFxRateRepository
 {
     Task<FxRate?> GetAsync(string fromCurrency, string toCurrency, DateOnly date);
     Task<IReadOnlyList<FxRate>> GetRangeAsync(string fromCurrency, string toCurrency, DateOnly from, DateOnly to);
+
+    /// <summary>Every stored rate across all currency pairs, for the Vocabularies
+    /// page's read-only "FX Rates" sub-tab.</summary>
+    Task<IReadOnlyList<FxRate>> GetAllAsync();
+
     Task<FxRate> AddAsync(FxRate rate);
 
     /// <summary>All rates currently awaiting manual review — see

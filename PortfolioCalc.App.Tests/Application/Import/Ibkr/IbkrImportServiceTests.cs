@@ -236,6 +236,59 @@ public class IbkrImportServiceTests
     }
 
     [Fact]
+    public async Task ImportAsync_sets_the_exchange_on_a_newly_created_security_from_the_trade_row()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var service = CreateService(context);
+
+        using var stream = File.OpenRead(SamplePath);
+        await service.ImportAsync(stream);
+
+        // <Trade ... symbol="AVSG" ... listingExchange="LSEETF" .../>
+        var avsg = context.Securities.Single(s => s.Symbol == "AVSG");
+        Assert.Equal("LSEETF", avsg.Exchange);
+    }
+
+    [Fact]
+    public async Task ImportAsync_backfills_the_exchange_on_a_pre_existing_security_with_no_exchange_recorded()
+    {
+        using var context = CreateOpenInMemoryContext();
+        // Simulates a Security imported before this feature existed: same Symbol +
+        // Currency as a real row in the sample export, but no Exchange recorded yet.
+        var securityRepository = new SecurityRepository(context);
+        var preExisting = await securityRepository.AddAsync(
+            new Security { Symbol = "AVSG", Name = "AVSG", Currency = "GBP" });
+        Assert.Null(preExisting.Exchange);
+
+        var service = CreateService(context);
+        using var stream = File.OpenRead(SamplePath);
+        await service.ImportAsync(stream);
+
+        // Re-importing dedupes the transaction itself, but the existing Security row
+        // must still get backfilled with the exchange the row reports.
+        var avsg = context.Securities.Single(s => s.Symbol == "AVSG");
+        Assert.Equal(preExisting.Id, avsg.Id);
+        Assert.Equal("LSEETF", avsg.Exchange);
+    }
+
+    [Fact]
+    public async Task ImportAsync_does_not_overwrite_an_already_populated_exchange()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var securityRepository = new SecurityRepository(context);
+        var preExisting = await securityRepository.AddAsync(
+            new Security { Symbol = "AVSG", Name = "AVSG", Currency = "GBP", Exchange = "SOMEOTHERCODE" });
+
+        var service = CreateService(context);
+        using var stream = File.OpenRead(SamplePath);
+        await service.ImportAsync(stream);
+
+        var avsg = context.Securities.Single(s => s.Symbol == "AVSG");
+        Assert.Equal(preExisting.Id, avsg.Id);
+        Assert.Equal("SOMEOTHERCODE", avsg.Exchange);
+    }
+
+    [Fact]
     public async Task ImportAsync_reports_fx_conversion_trades_as_recognized_but_skipped()
     {
         using var context = CreateOpenInMemoryContext();

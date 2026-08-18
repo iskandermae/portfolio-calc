@@ -265,6 +265,58 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   wasn't needed, just enough lookback to clear a single holiday weekend without walking
   back so far the figure stops being "current." No caller existed yet that needed this, so
   it lives in `PositionValuationService`, not as a new method on the two services.
+- **`Security.Exchange` stores the broker's raw listing-exchange code (e.g. IBKR's
+  "LSEETF", "IBIS"), imported from any raw row that resolves a Security** (Trade,
+  the dividend/tax grouping pass, Transfer) — not just Trade rows, since a future export
+  may report it more broadly (confirmed real need: the user's own export already carries
+  it on CashTransaction rows too). A newly-created Security gets it directly; an
+  already-existing Security with no Exchange recorded (e.g. imported before this field
+  existed) is backfilled the next time a row for it is seen — the first non-empty value
+  ever observed is authoritative and later rows never overwrite it, since IBKR isn't
+  expected to report conflicting exchanges for the same Symbol+Currency and silently
+  flip-flopping on it would be worse than just keeping the first answer.
+- **A generic `VocabularyEntry` table (`VocabularyType` + `Key` + `Value` + `Description`),
+  not a hard-coded static mapping, backs the exchange → Yahoo-suffix lookup** (superseding
+  an earlier hard-coded-dictionary approach) — the user asked for several such lookup
+  tables to be user-editable via a Gui CRUD page rather than requiring a code change each
+  time a new exchange/vocabulary shows up. One table with a `VocabularyType`
+  discriminator (see `VocabularyTypes`) avoids a new schema/migration per vocabulary; a
+  missing key and an empty `Value` are both valid, distinct "no suffix" outcomes from
+  "there is no data at all" (unmapped code → not present as a row). Seeded via
+  `HasData` with ARCA/NASDAQ/NYSE → "" (US, no suffix), LSEETF/LSE → ".L" (London Stock
+  Exchange), IBIS → ".DE" (Xetra/Deutsche Börse) — the exchanges seen in the user's own
+  sample export. An unmapped/unknown code (or none at all) falls back to the plain
+  symbol, same as before this feature — an honest "we don't know this market yet" gap,
+  not guessed further.
+- **The Vocabularies Gui page also exposes read-only "Security Prices"/"FX Rates" sub-tabs**
+  (via new `ISecurityPriceRepository.GetAllAsync`/`IFxRateRepository.GetAllAsync`
+  methods) alongside the CRUD-able vocabulary sub-tabs, per an explicit user request to
+  see stored prices/rates from the same screen — plain repository reads called directly
+  from the Gui, same CRUD boundary as `ValidationReview.razor`.
+- **The Transactions report's type filter is modeled as a `TransactionCategory`
+  (`Primary`/`Secondary`) classification, not a per-type checkbox list.** Every current
+  `CashTransactionType`/`SecurityTransactionType` is classified in one place
+  (`TransactionCategoryClassifier`) and an unclassified new type throws rather than
+  silently vanishing from both views. Buy/Sell/Deposit/TransferIn/Withdrawal are
+  `Primary` (shown by default); Tax/Interest/Dividend are `Secondary` (income/fee noise,
+  hidden by default, revealed by one toggle). The toggle is persisted in the same
+  `SavedLayout` JSON blob the screen already saves (a new field defaults to `false` when
+  absent from already-saved JSON, keeping old saves compatible).
+- **App-wide logging is a small custom `ILoggerProvider`/`ILogger` (`FileLoggerProvider`)
+  appending timestamped lines to `log.txt` in `PortfolioDbContext.DefaultDataDirectory`,
+  not a third-party logging library.** The user explicitly asked to avoid silent
+  failures with nothing to look at; `Microsoft.Extensions.Logging` ships no file
+  provider out of the box, and the app's actual need (append line, read it back on a Gui
+  page, let the user clear it) is small enough that a ~40-line provider is proportionate
+  — no rotation, log levels UI, or structured viewer.
+- **`PortfolioValueReport.razor`/`TransactionsReport.razor`/`Import.razor`'s data-loading
+  now catches exceptions, logs via injected `ILogger<T>`, and shows a friendly message
+  instead of leaving the page blank.** `Home.razor`/`Settings.razor`/`ValidationReview.razor`
+  were deliberately left as-is: they only read simple repository state (pending lists,
+  the settings row), not the external-API-calling services (`SecurityPriceService`/
+  `FxRateService`/`InflationRateService`/`BaseCurrencyConversionService`) that can
+  realistically fail — adding the same wrapper there would be defensive scaffolding
+  with nothing real behind it yet.
 - **A position whose price or FX conversion doesn't come back `Success` is excluded from
   the portfolio value report's grand total and visually flagged, rather than shown with a
   caveat alongside a number.** `SecurityPriceService`/`FxRateService.GetPriceAsync`/

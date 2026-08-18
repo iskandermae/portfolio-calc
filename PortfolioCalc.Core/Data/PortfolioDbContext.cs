@@ -20,6 +20,7 @@ public class PortfolioDbContext : DbContext
     public DbSet<AppSettings> AppSettings => Set<AppSettings>();
     public DbSet<InflationRate> InflationRates => Set<InflationRate>();
     public DbSet<UiLayoutSetting> UiLayoutSettings => Set<UiLayoutSetting>();
+    public DbSet<VocabularyEntry> VocabularyEntries => Set<VocabularyEntry>();
 
     public PortfolioDbContext(DbContextOptions<PortfolioDbContext> options) : base(options)
     {
@@ -88,5 +89,20 @@ public class PortfolioDbContext : DbContext
 
         modelBuilder.Entity<UiLayoutSetting>()
             .HasKey(s => s.ScreenKey);
+
+        modelBuilder.Entity<VocabularyEntry>()
+            .HasIndex(e => new { e.VocabularyType, e.Key })
+            .IsUnique();
+
+        // Seed the exchange -> Yahoo suffix vocabulary (see doc/decisions.md for why
+        // these codes and why an unmapped code falls back to the plain symbol). Users
+        // can add more via the Vocabularies page as new exchanges show up.
+        modelBuilder.Entity<VocabularyEntry>().HasData(
+            new VocabularyEntry { Id = 1, VocabularyType = VocabularyTypes.ExchangeYahooSuffix, Key = "ARCA", Value = "", Description = "US (NYSE Arca) — no suffix" },
+            new VocabularyEntry { Id = 2, VocabularyType = VocabularyTypes.ExchangeYahooSuffix, Key = "NASDAQ", Value = "", Description = "US (Nasdaq) — no suffix" },
+            new VocabularyEntry { Id = 3, VocabularyType = VocabularyTypes.ExchangeYahooSuffix, Key = "NYSE", Value = "", Description = "US (NYSE) — no suffix" },
+            new VocabularyEntry { Id = 4, VocabularyType = VocabularyTypes.ExchangeYahooSuffix, Key = "LSEETF", Value = ".L", Description = "London Stock Exchange (ETFs)" },
+            new VocabularyEntry { Id = 5, VocabularyType = VocabularyTypes.ExchangeYahooSuffix, Key = "LSE", Value = ".L", Description = "London Stock Exchange" },
+            new VocabularyEntry { Id = 6, VocabularyType = VocabularyTypes.ExchangeYahooSuffix, Key = "IBIS", Value = ".DE", Description = "Xetra / Deutsche Börse" });
     }
 }

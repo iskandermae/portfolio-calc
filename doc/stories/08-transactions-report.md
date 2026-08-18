@@ -18,3 +18,11 @@ sort/layout is remembered for future sessions.
 
 ## Dependencies / Open Questions
 - Depends on [01-transaction-data-storage](01-transaction-data-storage.md).
+
+## Later enhancement (not a numbered story)
+- A default "Primary" (Buy/Sell/Deposit/TransferIn/Withdrawal) filter, with a toggle to
+  reveal "Secondary"/income transactions (Tax/Interest/Dividend), was added on top of
+  this story — see `TransactionCategory`/`TransactionCategoryClassifier` and
+  doc/decisions.md. The toggle is persisted in the same `SavedLayout` blob this story
+  introduced. Amount/Fee/Quantity/Date formatting was also tightened (N2, right-aligned,
+  `yyyy-MM-dd`) as part of the same pass.

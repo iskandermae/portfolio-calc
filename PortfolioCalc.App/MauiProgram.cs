@@ -5,6 +5,7 @@ using PortfolioCalc.App.Application.Import.Ibkr;
 using PortfolioCalc.App.Application.Inflation;
 using PortfolioCalc.App.Application.Positions;
 using PortfolioCalc.App.Application.Prices;
+using PortfolioCalc.App.Logging;
 using PortfolioCalc.Core.Data;
 using PortfolioCalc.Core.Data.Fx;
 using PortfolioCalc.Core.Data.Import.Ibkr;
@@ -63,10 +64,17 @@ public static class MauiProgram
 		builder.Services.AddScoped<PositionValuationService>();
 
 		builder.Services.AddScoped<IUiLayoutSettingRepository, UiLayoutSettingRepository>();
+		builder.Services.AddScoped<IVocabularyRepository, VocabularyRepository>();
 
 		builder.Services.AddScoped<IInflationRateRepository, InflationRateRepository>();
 		builder.Services.AddHttpClient<IInflationRateProvider, WorldBankInflationRateProvider>();
 		builder.Services.AddScoped<InflationRateService>();
+
+		// App-wide file logging so a non-developer user has somewhere to look (the Logs
+		// page) instead of a page silently going blank on an unhandled exception — see
+		// doc/decisions.md.
+		builder.Logging.AddProvider(
+			new FileLoggerProvider(Path.Combine(PortfolioDbContext.DefaultDataDirectory, "log.txt")));
 
 #if DEBUG
 		builder.Services.AddBlazorWebViewDeveloperTools();

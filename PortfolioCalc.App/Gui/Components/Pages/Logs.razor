@@ -1,0 +1,41 @@
+@page "/logs"
+@using PortfolioCalc.Core.Data
+
+<h1>Logs</h1>
+
+<p>
+    <button class="btn btn-danger btn-sm" @onclick="ClearLogs">Clear all</button>
+</p>
+
+@if (string.IsNullOrEmpty(_content))
+{
+    <p><em>No log entries.</em></p>
+}
+else
+{
+    <pre>@_content</pre>
+}
+
+@code {
+    // Reuses PortfolioDbContext.DefaultDataDirectory rather than inventing a new path —
+    // see doc/decisions.md.
+    private static string LogFilePath => Path.Combine(PortfolioDbContext.DefaultDataDirectory, "log.txt");
+
+    private string? _content;
+
+    protected override void OnInitialized() => LoadContent();
+
+    private void LoadContent()
+    {
+        // As-is (oldest first) order — each line is already timestamped, so a user
+        // scanning top-to-bottom reads it the same way the app wrote it.
+        _content = File.Exists(LogFilePath) ? File.ReadAllText(LogFilePath) : null;
+    }
+
+    private void ClearLogs()
+    {
+        if (File.Exists(LogFilePath))
+            File.Delete(LogFilePath);
+        _content = null;
+    }
+}

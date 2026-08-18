@@ -1,0 +1,225 @@
+@page "/vocabularies"
+@using PortfolioCalc.Core.Domain
+@using PortfolioCalc.Core.Repositories
+@inject IVocabularyRepository VocabularyRepository
+@inject ISecurityPriceRepository SecurityPriceRepository
+@inject IFxRateRepository FxRateRepository
+@inject ILogger<Vocabularies> Logger
+
+<h1>Vocabularies</h1>
+
+<p>Small, user-editable lookup tables the app uses internally (e.g. mapping a broker's
+   listing-exchange code to a price-provider suffix), plus a read-only view of stored
+   prices/rates.</p>
+
+@if (_error is not null)
+{
+    <p class="text-danger">@_error</p>
+}
+else
+{
+    <ul class="nav nav-tabs">
+        @foreach (var type in _vocabularyTypes)
+        {
+            <li class="nav-item">
+                <a class="nav-link @(_activeTab == type ? "active" : "")" href="#"
+                   @onclick="() => SelectTabAsync(type)" @onclick:preventDefault>@type</a>
+            </li>
+        }
+        <li class="nav-item">
+            <a class="nav-link @(_activeTab == PricesTab ? "active" : "")" href="#"
+               @onclick="() => SelectTabAsync(PricesTab)" @onclick:preventDefault>Security Prices</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(_activeTab == RatesTab ? "active" : "")" href="#"
+               @onclick="() => SelectTabAsync(RatesTab)" @onclick:preventDefault>FX Rates</a>
+        </li>
+    </ul>
+
+    <div class="mt-3">
+        @if (_activeTab == PricesTab)
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Security</th>
+                        <th>Currency</th>
+                        <th>Date</th>
+                        <th class="text-end">Price</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var price in _prices)
+                    {
+                        <tr>
+                            <td>@price.Security?.Symbol</td>
+                            <td>@price.Security?.Currency</td>
+                            <td>@price.Date.ToString("yyyy-MM-dd")</td>
+                            <td class="text-end">@price.Price.ToString("N2")</td>
+                            <td>@price.Status</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else if (_activeTab == RatesTab)
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Pair</th>
+                        <th>Date</th>
+                        <th class="text-end">Rate</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var rate in _rates)
+                    {
+                        <tr>
+                            <td>@rate.FromCurrency / @rate.ToCurrency</td>
+                            <td>@rate.Date.ToString("yyyy-MM-dd")</td>
+                            <td class="text-end">@rate.Rate.ToString("N4")</td>
+                            <td>@rate.Status</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else if (_activeTab is not null)
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Key</th>
+                        <th>Value</th>
+                        <th>Description</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in _entries)
+                    {
+                        <tr>
+                            <td>@entry.Key</td>
+                            <td>
+                                <input class="form-control" style="max-width: 10rem" @bind="_editedValues[entry.Id]" />
+                            </td>
+                            <td>
+                                <input class="form-control" @bind="_editedDescriptions[entry.Id]" />
+                            </td>
+                            <td>
+                                <button class="btn btn-success btn-sm" @onclick="() => SaveEntryAsync(entry)">Save</button>
+                                <button class="btn btn-danger btn-sm" @onclick="() => DeleteEntryAsync(entry)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                    <tr>
+                        <td><input class="form-control" placeholder="new key" @bind="_newKey" /></td>
+                        <td><input class="form-control" style="max-width: 10rem" placeholder="value" @bind="_newValue" /></td>
+                        <td><input class="form-control" placeholder="description (optional)" @bind="_newDescription" /></td>
+                        <td><button class="btn btn-primary btn-sm" @onclick="AddEntryAsync">Add</button></td>
+                    </tr>
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@code {
+    private const string PricesTab = "__Prices";
+    private const string RatesTab = "__Rates";
+
+    private IReadOnlyList<string> _vocabularyTypes = [];
+    private IReadOnlyList<VocabularyEntry> _entries = [];
+    private IReadOnlyList<SecurityPrice> _prices = [];
+    private IReadOnlyList<FxRate> _rates = [];
+    private readonly Dictionary<int, string> _editedValues = [];
+    private readonly Dictionary<int, string> _editedDescriptions = [];
+    private string? _activeTab;
+    private string? _error;
+
+    private string _newKey = "";
+    private string _newValue = "";
+    private string _newDescription = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _vocabularyTypes = await VocabularyRepository.GetTypesAsync();
+            _activeTab = _vocabularyTypes.FirstOrDefault();
+            if (_activeTab is not null)
+                await LoadEntriesAsync(_activeTab);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load vocabularies.");
+            _error = "Could not load vocabularies. See the Logs page for details.";
+        }
+    }
+
+    private async Task SelectTabAsync(string tab)
+    {
+        _activeTab = tab;
+        _newKey = _newValue = _newDescription = "";
+        try
+        {
+            if (tab == PricesTab)
+                _prices = await SecurityPriceRepository.GetAllAsync();
+            else if (tab == RatesTab)
+                _rates = await FxRateRepository.GetAllAsync();
+            else
+                await LoadEntriesAsync(tab);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load tab {Tab} on the Vocabularies page.", tab);
+            _error = "Could not load this tab. See the Logs page for details.";
+        }
+    }
+
+    private async Task LoadEntriesAsync(string vocabularyType)
+    {
+        _entries = await VocabularyRepository.GetByTypeAsync(vocabularyType);
+        _editedValues.Clear();
+        _editedDescriptions.Clear();
+        foreach (var entry in _entries)
+        {
+            _editedValues[entry.Id] = entry.Value;
+            _editedDescriptions[entry.Id] = entry.Description ?? "";
+        }
+    }
+
+    private async Task SaveEntryAsync(VocabularyEntry entry)
+    {
+        entry.Value = _editedValues.GetValueOrDefault(entry.Id, entry.Value);
+        var description = _editedDescriptions.GetValueOrDefault(entry.Id, "");
+        entry.Description = string.IsNullOrWhiteSpace(description) ? null : description;
+        await VocabularyRepository.UpdateAsync(entry);
+        await LoadEntriesAsync(_activeTab!);
+    }
+
+    private async Task DeleteEntryAsync(VocabularyEntry entry)
+    {
+        await VocabularyRepository.DeleteAsync(entry.Id);
+        await LoadEntriesAsync(_activeTab!);
+    }
+
+    private async Task AddEntryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newKey) || _activeTab is null)
+            return;
+
+        await VocabularyRepository.AddAsync(new VocabularyEntry
+        {
+            VocabularyType = _activeTab,
+            Key = _newKey,
+            Value = _newValue,
+            Description = string.IsNullOrWhiteSpace(_newDescription) ? null : _newDescription,
+        });
+        _newKey = _newValue = _newDescription = "";
+        await LoadEntriesAsync(_activeTab);
+    }
+}

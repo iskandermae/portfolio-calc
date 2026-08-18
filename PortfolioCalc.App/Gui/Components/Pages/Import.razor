@@ -2,6 +2,7 @@
 @using PortfolioCalc.App.Application.Import
 @using PortfolioCalc.App.Application.Import.Ibkr
 @inject IbkrImportService ImportService
+@inject ILogger<Import> Logger
 
 <h1>Import IBKR Transactions</h1>
 
@@ -66,6 +67,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Import failed.");
             _error = $"Import failed: {ex.Message}";
         }
         finally

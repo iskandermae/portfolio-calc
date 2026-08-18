@@ -28,7 +28,8 @@ public class PositionValuationServiceTests
     private sealed class FakePriceProvider(IReadOnlyDictionary<string, PriceResult> resultBySymbol) : ISecurityPriceProvider
     {
         public Task<PriceResult> GetPriceAsync(
-            string symbol, string currency, DateOnly date, CancellationToken cancellationToken = default) =>
+            string symbol, string currency, DateOnly date, string? exchange = null,
+            CancellationToken cancellationToken = default) =>
             Task.FromResult(resultBySymbol.TryGetValue(symbol, out var result)
                 ? result
                 : PriceResult.Unsupported($"No fake price configured for {symbol}"));

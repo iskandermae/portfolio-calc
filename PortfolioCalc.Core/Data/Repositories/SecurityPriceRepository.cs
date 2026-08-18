@@ -15,6 +15,12 @@ public class SecurityPriceRepository(PortfolioDbContext context) : ISecurityPric
             .OrderBy(p => p.Date)
             .ToListAsync();
 
+    public async Task<IReadOnlyList<SecurityPrice>> GetAllAsync() =>
+        await context.SecurityPrices
+            .Include(p => p.Security)
+            .OrderByDescending(p => p.Date)
+            .ToListAsync();
+
     public async Task<SecurityPrice> AddAsync(SecurityPrice price)
     {
         context.SecurityPrices.Add(price);
