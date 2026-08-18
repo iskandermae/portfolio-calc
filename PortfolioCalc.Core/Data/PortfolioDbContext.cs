@@ -19,6 +19,7 @@ public class PortfolioDbContext : DbContext
     public DbSet<SecurityPrice> SecurityPrices => Set<SecurityPrice>();
     public DbSet<AppSettings> AppSettings => Set<AppSettings>();
     public DbSet<InflationRate> InflationRates => Set<InflationRate>();
+    public DbSet<UiLayoutSetting> UiLayoutSettings => Set<UiLayoutSetting>();
 
     public PortfolioDbContext(DbContextOptions<PortfolioDbContext> options) : base(options)
     {
@@ -84,5 +85,8 @@ public class PortfolioDbContext : DbContext
         modelBuilder.Entity<InflationRate>()
             .HasIndex(r => new { r.BaseCurrency, r.Period })
             .IsUnique();
+
+        modelBuilder.Entity<UiLayoutSetting>()
+            .HasKey(s => s.ScreenKey);
     }
 }

@@ -208,3 +208,17 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   `ISecurityPriceRepository` directly, not through an Application service** — listing
   pending rows and updating a status/value is plain CRUD per CLAUDE.md's Gui/Application
   boundary; the actual logic (the stddev classification) lives in the services, not here.
+- **Saved screen layouts (column order/visibility, sort) live in their own
+  `UiLayoutSetting` table (`ScreenKey` + `LayoutJson`), not in the `AppSettings` singleton
+  row from story 05.** `AppSettings` is deliberately a fixed `Id = 1` row for one global
+  setting (base currency); a per-screen layout is keyed by screen identifier and there can
+  be many screens, so it needs its own key rather than overloading the singleton row or
+  adding screen-specific columns to it. `TransactionsReport.razor` (story 08) reads/writes
+  it directly, same CRUD-through-Gui reasoning as `ValidationReview.razor` above — no
+  Application-layer logic involved in saving a layout blob.
+- **`ISecurityTransactionRepository.GetAllAsync`/`ICashTransactionRepository.GetAllAsync`
+  eager-load `Position.Account`/`Position.Security` and `Account` respectively** — the
+  transactions list report (story 08) needs the account name and security symbol as
+  display columns for every row, and a report screen listing everything is the first real
+  caller that needs "all rows," unlike the existing range/security/account-scoped
+  queries.

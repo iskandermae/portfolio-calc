@@ -58,6 +58,8 @@ public static class MauiProgram
 		builder.Services.AddScoped<IAppSettingsRepository, AppSettingsRepository>();
 		builder.Services.AddScoped<BaseCurrencyConversionService>();
 
+		builder.Services.AddScoped<IUiLayoutSettingRepository, UiLayoutSettingRepository>();
+
 		builder.Services.AddScoped<IInflationRateRepository, InflationRateRepository>();
 		builder.Services.AddHttpClient<IInflationRateProvider, WorldBankInflationRateProvider>();
 		builder.Services.AddScoped<InflationRateService>();

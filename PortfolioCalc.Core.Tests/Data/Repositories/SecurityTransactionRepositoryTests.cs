@@ -119,6 +119,22 @@ public class SecurityTransactionRepositoryTests
     }
 
     [Fact]
+    public async Task GetAllAsync_returns_all_transactions_with_account_and_security_loaded()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var position = await CreatePosition(context);
+        var repository = new SecurityTransactionRepository(context);
+        await repository.AddAsync(new SecurityTransaction { PositionId = position.Id, Type = SecurityTransactionType.Buy, Date = new DateOnly(2026, 1, 1), Quantity = 1m, Amount = -100m, Currency = "USD" });
+        await repository.AddAsync(new SecurityTransaction { PositionId = position.Id, Type = SecurityTransactionType.Dividend, Date = new DateOnly(2026, 2, 1), Amount = 10m, Currency = "USD" });
+
+        var result = await repository.GetAllAsync();
+
+        Assert.Equal(2, result.Count);
+        Assert.All(result, t => Assert.Equal("AAPL", t.Position!.Security!.Symbol));
+        Assert.All(result, t => Assert.Equal("IBKR Main", t.Position!.Account!.Name));
+    }
+
+    [Fact]
     public async Task AddAsync_rejects_a_buy_without_quantity()
     {
         using var context = CreateOpenInMemoryContext();

@@ -1,0 +1,223 @@
+@page "/transactions-report"
+@using System.Text.Json
+@using PortfolioCalc.Core.Domain
+@using PortfolioCalc.Core.Repositories
+@inject ISecurityTransactionRepository SecurityTransactionRepository
+@inject ICashTransactionRepository CashTransactionRepository
+@inject IUiLayoutSettingRepository LayoutRepository
+
+<h1>Transactions</h1>
+
+<p>
+    <strong>Columns:</strong>
+    @foreach (var column in _columns)
+    {
+        <span class="me-3">
+            <input type="checkbox" id="@("col-" + column.Key)" checked="@column.Visible"
+                   @onchange="e => ToggleColumnAsync(column, (bool)e.Value!)" />
+            <label for="@("col-" + column.Key)">@column.Label</label>
+            <button class="btn btn-sm btn-link p-0" title="Move left" disabled="@(_columns.IndexOf(column) == 0)"
+                    @onclick="() => MoveColumnAsync(column, -1)">&larr;</button>
+            <button class="btn btn-sm btn-link p-0" title="Move right" disabled="@(_columns.IndexOf(column) == _columns.Count - 1)"
+                    @onclick="() => MoveColumnAsync(column, 1)">&rarr;</button>
+        </span>
+    }
+</p>
+
+<table class="table">
+    <thead>
+        <tr>
+            @foreach (var column in _columns.Where(c => c.Visible))
+            {
+                <th style="cursor: pointer" @onclick="() => SortByAsync(column.Key)">
+                    @column.Label@(_sortKey == column.Key ? (_sortDescending ? " ▼" : " ▲") : "")
+                </th>
+            }
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var row in _sortedRows)
+        {
+            <tr>
+                @foreach (var column in _columns.Where(c => c.Visible))
+                {
+                    <td>@CellValue(row, column.Key)</td>
+                }
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private const string ScreenKey = "TransactionsReport";
+
+    private record TransactionRow(
+        DateOnly Date, string Kind, string Account, string? Security,
+        decimal? Quantity, decimal Amount, string Currency, decimal? Fee, string? Note);
+
+    private class ColumnState
+    {
+        public required string Key { get; init; }
+        public required string Label { get; init; }
+        public bool Visible { get; set; } = true;
+    }
+
+    private class SavedColumn
+    {
+        public required string Key { get; set; }
+        public bool Visible { get; set; }
+    }
+
+    private class SavedLayout
+    {
+        public List<SavedColumn> Columns { get; set; } = [];
+        public string? SortKey { get; set; }
+        public bool SortDescending { get; set; }
+    }
+
+    private List<ColumnState> _columns =
+    [
+        new() { Key = "Date", Label = "Date" },
+        new() { Key = "Kind", Label = "Type" },
+        new() { Key = "Account", Label = "Account" },
+        new() { Key = "Security", Label = "Security" },
+        new() { Key = "Quantity", Label = "Quantity" },
+        new() { Key = "Amount", Label = "Amount" },
+        new() { Key = "Currency", Label = "Currency" },
+        new() { Key = "Fee", Label = "Fee" },
+        new() { Key = "Note", Label = "Note" },
+    ];
+
+    private IReadOnlyList<TransactionRow> _rows = [];
+    private IReadOnlyList<TransactionRow> _sortedRows = [];
+    private string _sortKey = "Date";
+    private bool _sortDescending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLayoutAsync();
+        await LoadRowsAsync();
+    }
+
+    private async Task LoadLayoutAsync()
+    {
+        var saved = await LayoutRepository.GetAsync(ScreenKey);
+        if (saved is null)
+            return;
+
+        var layout = JsonSerializer.Deserialize<SavedLayout>(saved.LayoutJson);
+        if (layout is null)
+            return;
+
+        var byKey = _columns.ToDictionary(c => c.Key);
+        var ordered = new List<ColumnState>();
+        foreach (var savedColumn in layout.Columns)
+        {
+            if (!byKey.TryGetValue(savedColumn.Key, out var column))
+                continue;
+            column.Visible = savedColumn.Visible;
+            ordered.Add(column);
+        }
+        foreach (var column in _columns)
+        {
+            if (!ordered.Contains(column))
+                ordered.Add(column);
+        }
+        _columns = ordered;
+
+        _sortKey = layout.SortKey ?? _sortKey;
+        _sortDescending = layout.SortDescending;
+    }
+
+    private async Task SaveLayoutAsync()
+    {
+        var layout = new SavedLayout
+        {
+            Columns = _columns.Select(c => new SavedColumn { Key = c.Key, Visible = c.Visible }).ToList(),
+            SortKey = _sortKey,
+            SortDescending = _sortDescending,
+        };
+        await LayoutRepository.SaveAsync(ScreenKey, JsonSerializer.Serialize(layout));
+    }
+
+    private async Task LoadRowsAsync()
+    {
+        var securityTransactions = await SecurityTransactionRepository.GetAllAsync();
+        var cashTransactions = await CashTransactionRepository.GetAllAsync();
+
+        var rows = securityTransactions
+            .Select(t => new TransactionRow(
+                t.Date, t.Type.ToString(), t.Position!.Account!.Name, t.Position.Security!.Symbol,
+                t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note))
+            .Concat(cashTransactions
+                .Select(t => new TransactionRow(
+                    t.Date, t.Type.ToString(), t.Account!.Name, null,
+                    null, t.Amount, t.Currency, t.FeeAmount, t.Note)))
+            .ToList();
+
+        _rows = rows;
+        ApplySort();
+    }
+
+    private void ApplySort()
+    {
+        IEnumerable<TransactionRow> ordered = _sortKey switch
+        {
+            "Kind" => _rows.OrderBy(r => r.Kind),
+            "Account" => _rows.OrderBy(r => r.Account),
+            "Security" => _rows.OrderBy(r => r.Security),
+            "Quantity" => _rows.OrderBy(r => r.Quantity),
+            "Amount" => _rows.OrderBy(r => r.Amount),
+            "Currency" => _rows.OrderBy(r => r.Currency),
+            "Fee" => _rows.OrderBy(r => r.Fee),
+            "Note" => _rows.OrderBy(r => r.Note),
+            _ => _rows.OrderBy(r => r.Date),
+        };
+        _sortedRows = (_sortDescending ? ordered.Reverse() : ordered).ToList();
+    }
+
+    private async Task SortByAsync(string key)
+    {
+        if (_sortKey == key)
+            _sortDescending = !_sortDescending;
+        else
+        {
+            _sortKey = key;
+            _sortDescending = false;
+        }
+        ApplySort();
+        await SaveLayoutAsync();
+    }
+
+    private async Task ToggleColumnAsync(ColumnState column, bool visible)
+    {
+        column.Visible = visible;
+        await SaveLayoutAsync();
+    }
+
+    private async Task MoveColumnAsync(ColumnState column, int direction)
+    {
+        var index = _columns.IndexOf(column);
+        var newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= _columns.Count)
+            return;
+
+        _columns.RemoveAt(index);
+        _columns.Insert(newIndex, column);
+        await SaveLayoutAsync();
+    }
+
+    private static object? CellValue(TransactionRow row, string key) => key switch
+    {
+        "Date" => row.Date,
+        "Kind" => row.Kind,
+        "Account" => row.Account,
+        "Security" => row.Security,
+        "Quantity" => row.Quantity,
+        "Amount" => row.Amount,
+        "Currency" => row.Currency,
+        "Fee" => row.Fee,
+        "Note" => row.Note,
+        _ => null,
+    };
+}

@@ -5,12 +5,12 @@ A report/window listing all transactions with sortable columns, where the chosen
 sort/layout is remembered for future sessions.
 
 ## Acceptance Criteria
-- [ ] A screen lists cash and security transactions together (or clearly tabbed), with
+- [x] A screen lists cash and security transactions together (or clearly tabbed), with
       key fields as columns (date, security, type, amount, currency, ...).
-- [ ] Clicking a column header sorts by that field (asc/desc toggle).
-- [ ] Column order/visibility and the current sort are saved locally and restored the
+- [x] Clicking a column header sorts by that field (asc/desc toggle).
+- [x] Column order/visibility and the current sort are saved locally and restored the
       next time the screen is opened.
-- [ ] Integration test (or GUI test) confirms saved layout survives an app restart.
+- [x] Integration test (or GUI test) confirms saved layout survives an app restart.
 
 ## Technical Notes
 - Persist layout/sort state as a small local settings blob (e.g. JSON in the settings

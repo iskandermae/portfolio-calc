@@ -45,4 +45,10 @@ public class CashTransactionRepository(PortfolioDbContext context) : ICashTransa
             .Where(t => t.AccountId == accountId)
             .OrderBy(t => t.Date)
             .ToListAsync();
+
+    public async Task<IReadOnlyList<CashTransaction>> GetAllAsync() =>
+        await context.CashTransactions
+            .Include(t => t.Account)
+            .OrderBy(t => t.Date)
+            .ToListAsync();
 }

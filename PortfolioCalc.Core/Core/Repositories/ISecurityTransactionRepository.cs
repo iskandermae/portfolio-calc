@@ -14,4 +14,7 @@ public interface ISecurityTransactionRepository
     /// mapped transaction against what's already stored (Position + Amount + Date +
     /// Currency; see doc/decisions.md) before inserting it.</summary>
     Task<IReadOnlyList<SecurityTransaction>> GetByPositionAsync(int positionId);
+    /// <summary>All security transactions with Position/Account/Security loaded, for the
+    /// transactions list report (doc/stories/08-transactions-report.md).</summary>
+    Task<IReadOnlyList<SecurityTransaction>> GetAllAsync();
 }

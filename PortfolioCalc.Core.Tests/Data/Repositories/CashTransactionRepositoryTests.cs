@@ -101,6 +101,21 @@ public class CashTransactionRepositoryTests
     }
 
     [Fact]
+    public async Task GetAllAsync_returns_all_transactions_with_account_loaded()
+    {
+        using var context = CreateOpenInMemoryContext();
+        var account = await new AccountRepository(context).AddAsync(new Account { Name = "IBKR Main" });
+        var repository = new CashTransactionRepository(context);
+        await repository.AddAsync(new CashTransaction { AccountId = account.Id, Type = CashTransactionType.Deposit, Date = new DateOnly(2026, 1, 1), Amount = 1m, Currency = "USD" });
+        await repository.AddAsync(new CashTransaction { AccountId = account.Id, Type = CashTransactionType.Withdrawal, Date = new DateOnly(2026, 2, 1), Amount = -2m, Currency = "USD" });
+
+        var result = await repository.GetAllAsync();
+
+        Assert.Equal(2, result.Count);
+        Assert.All(result, t => Assert.Equal("IBKR Main", t.Account!.Name));
+    }
+
+    [Fact]
     public async Task AddAsync_rejects_an_invalid_transaction()
     {
         using var context = CreateOpenInMemoryContext();

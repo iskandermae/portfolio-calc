@@ -51,4 +51,11 @@ public class SecurityTransactionRepository(PortfolioDbContext context) : ISecuri
             .Where(t => t.PositionId == positionId)
             .OrderBy(t => t.Date)
             .ToListAsync();
+
+    public async Task<IReadOnlyList<SecurityTransaction>> GetAllAsync() =>
+        await context.SecurityTransactions
+            .Include(t => t.Position!.Account)
+            .Include(t => t.Position!.Security)
+            .OrderBy(t => t.Date)
+            .ToListAsync();
 }
