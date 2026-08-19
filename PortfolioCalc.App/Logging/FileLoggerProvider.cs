@@ -21,7 +21,11 @@ public sealed class FileLoggerProvider(string filePath) : ILoggerProvider
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
+        // Warning and above only — this provider is registered app-wide (MauiProgram),
+        // so at Information it would also capture EF Core's verbose per-query SQL
+        // tracing (every SELECT/INSERT it runs), drowning out the actual page-load
+        // errors this file exists to surface. See doc/decisions.md.
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
 
         public void Log<TState>(
             LogLevel logLevel, EventId eventId, TState state, Exception? exception,

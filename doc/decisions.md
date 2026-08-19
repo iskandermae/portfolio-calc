@@ -308,7 +308,13 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   failures with nothing to look at; `Microsoft.Extensions.Logging` ships no file
   provider out of the box, and the app's actual need (append line, read it back on a Gui
   page, let the user clear it) is small enough that a ~40-line provider is proportionate
-  — no rotation, log levels UI, or structured viewer.
+  — no rotation, log levels UI, or structured viewer. Its `IsEnabled` only accepts
+  `Warning` and above, not `Information` — this provider is registered app-wide (not
+  scoped to one category), so at `Information` it also captured Entity Framework Core's
+  own verbose per-query SQL tracing, drowning the file in benign query dumps instead of
+  showing the real page-load errors it exists for. Discovered by inspecting a real
+  `log.txt` after building this feature — an `Error`-level `Logger.LogError(...)` call
+  still passes through fine at the `Warning` threshold.
 - **`PortfolioValueReport.razor`/`TransactionsReport.razor`/`Import.razor`'s data-loading
   now catches exceptions, logs via injected `ILogger<T>`, and shows a friendly message
   instead of leaving the page blank.** `Home.razor`/`Settings.razor`/`ValidationReview.razor`
