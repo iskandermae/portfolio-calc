@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using ApexCharts;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PortfolioCalc.App.Application.Fx;
 using PortfolioCalc.App.Application.Import.Ibkr;
@@ -34,6 +35,7 @@ public static class MauiProgram
 		builder.UseMauiApp<App>();
 
 		builder.Services.AddMauiBlazorWebView();
+		builder.Services.AddApexChartsMaui();
 
 		Directory.CreateDirectory(PortfolioDbContext.DefaultDataDirectory);
 
@@ -62,19 +64,29 @@ public static class MauiProgram
 		builder.Services.AddScoped<IAppSettingsRepository, AppSettingsRepository>();
 		builder.Services.AddScoped<BaseCurrencyConversionService>();
 		builder.Services.AddScoped<PositionValuationService>();
+		builder.Services.AddScoped<PositionValueChartService>();
 
 		builder.Services.AddScoped<IUiLayoutSettingRepository, UiLayoutSettingRepository>();
 		builder.Services.AddScoped<IVocabularyRepository, VocabularyRepository>();
 
 		builder.Services.AddScoped<IInflationRateRepository, InflationRateRepository>();
-		builder.Services.AddHttpClient<IInflationRateProvider, WorldBankInflationRateProvider>();
+		builder.Services.AddHttpClient<WorldBankInflationRateProvider>();
+		// Wrapped so a "InflationRateOverride" Vocabularies entry can fill a gap (e.g. the
+		// current year's CPI not published yet) — see doc/decisions.md.
+		builder.Services.AddScoped<IInflationRateProvider>(sp => new VocabularyOverrideInflationRateProvider(
+			sp.GetRequiredService<WorldBankInflationRateProvider>(), sp.GetRequiredService<IVocabularyRepository>(),
+			sp.GetRequiredService<ILogger<VocabularyOverrideInflationRateProvider>>()));
 		builder.Services.AddScoped<InflationRateService>();
 
 		// App-wide file logging so a non-developer user has somewhere to look (the Logs
 		// page) instead of a page silently going blank on an unhandled exception — see
-		// doc/decisions.md.
+		// doc/decisions.md. LogActivityTracker is constructed once here and registered as
+		// a singleton too, so the Gui (NavMenu/Logs page) shares the exact same instance
+		// the file logger reports into.
+		var logActivityTracker = new LogActivityTracker();
+		builder.Services.AddSingleton(logActivityTracker);
 		builder.Logging.AddProvider(
-			new FileLoggerProvider(Path.Combine(PortfolioDbContext.DefaultDataDirectory, "log.txt")));
+			new FileLoggerProvider(Path.Combine(PortfolioDbContext.DefaultDataDirectory, "log.txt"), logActivityTracker));
 
 #if DEBUG
 		builder.Services.AddBlazorWebViewDeveloperTools();
@@ -87,6 +99,19 @@ public static class MauiProgram
 		{
 			scope.ServiceProvider.GetRequiredService<PortfolioDbContext>().Database.Migrate();
 		}
+
+		// Belt-and-suspenders: a page-render exception is caught and logged by
+		// LoggingErrorBoundary (Routes.razor), but this catches anything outside that —
+		// e.g. an exception on a background thread never awaited by a component — so it
+		// still reaches log.txt instead of vanishing. See doc/decisions.md.
+		var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("UnhandledException");
+		AppDomain.CurrentDomain.UnhandledException += (_, e) => startupLogger.LogCritical(
+			e.ExceptionObject as Exception, "Unhandled AppDomain exception (IsTerminating={IsTerminating}).", e.IsTerminating);
+		TaskScheduler.UnobservedTaskException += (_, e) =>
+		{
+			startupLogger.LogError(e.Exception, "Unobserved task exception.");
+			e.SetObserved();
+		};
 
 		return app;
 	}

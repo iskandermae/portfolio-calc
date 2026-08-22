@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PortfolioCalc.Core.Data;
 using PortfolioCalc.Core.Data.Prices;
@@ -31,6 +33,21 @@ public class YahooFinanceSecurityPriceProviderTests
 
     private static YahooFinanceSecurityPriceProvider CreateProvider(PortfolioDbContext context) =>
         new(new HttpClient(), new VocabularyRepository(context));
+
+    /// <summary>Returns a fixed response body for every request, regardless of URL — lets a
+    /// test control Yahoo's response shape directly instead of depending on live data, for
+    /// shapes that are rare/hard to reproduce against the real endpoint (e.g. a result with
+    /// no "indicators"/"quote"/"close" at all).</summary>
+    private sealed class FixedResponseHandler(string jsonBody, HttpStatusCode statusCode = HttpStatusCode.OK)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json"),
+            });
+    }
 
     [Fact]
     public async Task GetPriceAsync_RealUsTicker_ReturnsSuccessWithKnownPrice()
@@ -126,5 +143,46 @@ public class YahooFinanceSecurityPriceProviderTests
         var result = await provider.GetPriceAsync("AAPL", "USD", KnownPastDate, exchange: "SOMEEXOTICMARKET");
 
         Assert.Equal(PriceStatus.Success, result.Status);
+    }
+
+    /// <summary>Regression test for a real crash hit via the position-value chart (story 10):
+    /// a chart date whose Yahoo response has a "meta" but no "indicators"/"quote"/"close" at
+    /// all (e.g. a date before the symbol started trading) used to throw
+    /// <see cref="KeyNotFoundException"/> out of <see cref="JsonElement.GetProperty"/> instead
+    /// of returning an <see cref="PriceStatus.UnsupportedSecurity"/> result.</summary>
+    [Fact]
+    public async Task GetPriceAsync_ResponseWithNoIndicatorsBlock_ReturnsUnsupportedInsteadOfThrowing()
+    {
+        using var context = CreateSeededContext();
+        const string body = """
+            {"chart":{"result":[{"meta":{"currency":"USD","symbol":"AAPL"}}],"error":null}}
+            """;
+        using var httpClient = new HttpClient(new FixedResponseHandler(body));
+        var provider = new YahooFinanceSecurityPriceProvider(httpClient, new VocabularyRepository(context), "https://example.invalid/chart");
+
+        var result = await provider.GetPriceAsync("AAPL", "USD", KnownPastDate);
+
+        Assert.Equal(PriceStatus.UnsupportedSecurity, result.Status);
+        Assert.Null(result.Price);
+        Assert.NotNull(result.ErrorMessage);
+    }
+
+    /// <summary>Same shape of gap, one level deeper: "indicators"/"quote" are present but the
+    /// single quote entry has no "close" array.</summary>
+    [Fact]
+    public async Task GetPriceAsync_ResponseWithNoCloseArray_ReturnsUnsupportedInsteadOfThrowing()
+    {
+        using var context = CreateSeededContext();
+        const string body = """
+            {"chart":{"result":[{"meta":{"currency":"USD","symbol":"AAPL"},
+            "indicators":{"quote":[{"open":[1.0]}]}}],"error":null}}
+            """;
+        using var httpClient = new HttpClient(new FixedResponseHandler(body));
+        var provider = new YahooFinanceSecurityPriceProvider(httpClient, new VocabularyRepository(context), "https://example.invalid/chart");
+
+        var result = await provider.GetPriceAsync("AAPL", "USD", KnownPastDate);
+
+        Assert.Equal(PriceStatus.UnsupportedSecurity, result.Status);
+        Assert.Null(result.Price);
     }
 }

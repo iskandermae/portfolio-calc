@@ -6,18 +6,20 @@ namespace PortfolioCalc.App.Logging;
 /// <c>MauiProgram</c> for wiring — the path is <c>PortfolioDbContext.DefaultDataDirectory
 /// \log.txt</c>). Exists so a non-developer user has somewhere to look (the Logs page)
 /// when a page fails instead of the WebView just going blank — see doc/decisions.md.
-/// No log levels UI, rotation, or structured viewer — proportionate to what was asked.</summary>
-public sealed class FileLoggerProvider(string filePath) : ILoggerProvider
+/// No log levels UI, rotation, or structured viewer — proportionate to what was asked.
+/// <paramref name="activityTracker"/> is notified after every line actually written, so the
+/// Gui can highlight the Logs nav link without polling the file.</summary>
+public sealed class FileLoggerProvider(string filePath, LogActivityTracker activityTracker) : ILoggerProvider
 {
     private readonly object _writeLock = new();
 
-    public ILogger CreateLogger(string categoryName) => new FileLogger(categoryName, filePath, _writeLock);
+    public ILogger CreateLogger(string categoryName) => new FileLogger(categoryName, filePath, _writeLock, activityTracker);
 
     public void Dispose()
     {
     }
 
-    private sealed class FileLogger(string categoryName, string filePath, object writeLock) : ILogger
+    private sealed class FileLogger(string categoryName, string filePath, object writeLock, LogActivityTracker activityTracker) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -42,6 +44,8 @@ public sealed class FileLoggerProvider(string filePath) : ILoggerProvider
             {
                 File.AppendAllText(filePath, line + Environment.NewLine);
             }
+
+            activityTracker.ReportEntry();
         }
     }
 }

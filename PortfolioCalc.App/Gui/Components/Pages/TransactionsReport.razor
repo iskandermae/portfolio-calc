@@ -6,6 +6,7 @@
 @inject ICashTransactionRepository CashTransactionRepository
 @inject IUiLayoutSettingRepository LayoutRepository
 @inject ILogger<TransactionsReport> Logger
+@inject NavigationManager NavigationManager
 
 <h1>Transactions</h1>
 
@@ -46,6 +47,7 @@ else
                         @column.Label@(_sortKey == column.Key ? (_sortDescending ? " ▼" : " ▲") : "")
                     </th>
                 }
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -56,6 +58,12 @@ else
                     {
                         <td class="@(IsNumericColumn(column.Key) ? "text-end" : "")">@FormatCell(row, column.Key)</td>
                     }
+                    <td>
+                        @if (row.SecurityId is not null)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => GoToChart(row)">Chart</button>
+                        }
+                    </td>
                 </tr>
             }
         </tbody>
@@ -67,7 +75,7 @@ else
 
     private record TransactionRow(
         DateOnly Date, string Kind, TransactionCategory Category, string Account, string? Security,
-        decimal? Quantity, decimal Amount, string Currency, decimal? Fee, string? Note);
+        decimal? Quantity, decimal Amount, string Currency, decimal? Fee, string? Note, int? SecurityId);
 
     private class ColumnState
     {
@@ -180,12 +188,12 @@ else
             .Select(t => new TransactionRow(
                 t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
                 t.Position!.Account!.Name, t.Position.Security!.Symbol,
-                t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note))
+                t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note, t.Position.Security.Id))
             .Concat(cashTransactions
                 .Select(t => new TransactionRow(
                     t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
                     t.Account!.Name, null,
-                    null, t.Amount, t.Currency, t.FeeAmount, t.Note)))
+                    null, t.Amount, t.Currency, t.FeeAmount, t.Note, null)))
             .ToList();
 
         _rows = rows;
@@ -264,6 +272,16 @@ else
         "Note" => row.Note ?? "",
         _ => "",
     };
+
+    /// <summary>Navigates to the position value chart (story 10) prefilled from this row —
+    /// security, transaction date as the chart's start date, and its quantity as the number
+    /// of shares (defaulting to 1 for a row with no quantity, e.g. a Dividend).</summary>
+    private void GoToChart(TransactionRow row)
+    {
+        var shares = row.Quantity ?? 1m;
+        NavigationManager.NavigateTo(
+            $"position-chart?securityId={row.SecurityId}&startDate={row.Date:yyyy-MM-dd}&shares={shares}");
+    }
 
     /// <summary>No decimal places for a whole number (e.g. "143"), exactly 2 otherwise
     /// (e.g. "142.50") — matches this project's existing "N2" numeric convention

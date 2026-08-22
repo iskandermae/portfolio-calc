@@ -1,0 +1,221 @@
+@page "/position-chart"
+@using PortfolioCalc.App.Application.Fx
+@using PortfolioCalc.App.Application.Positions
+@using PortfolioCalc.Core.Domain
+@using PortfolioCalc.Core.Repositories
+@inject ISecurityTransactionRepository SecurityTransactionRepository
+@inject ISecurityRepository SecurityRepository
+@inject BaseCurrencyConversionService BaseCurrencyConversionService
+@inject PositionValueChartService ChartService
+@inject ILogger<PositionChart> Logger
+@inject NavigationManager NavigationManager
+
+<div class="chart-page">
+<h1>Position Value Chart</h1>
+
+@if (_error is not null)
+{
+    <p class="text-danger">@_error</p>
+}
+else if (!_ready)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label>Security</label>
+            <select class="form-select" @bind="_selectedSecurityId">
+                <option value="0">-- Enter manually --</option>
+                @foreach (var security in _knownSecurities)
+                {
+                    <option value="@security.Id">@security.Symbol (@security.Currency)</option>
+                }
+            </select>
+        </div>
+        @if (_selectedSecurityId == 0)
+        {
+            <div class="col-md-2">
+                <label>Symbol</label>
+                <input class="form-control" @bind="_manualSymbol" />
+            </div>
+            <div class="col-md-2">
+                <label>Currency</label>
+                <input class="form-control" @bind="_manualCurrency" />
+            </div>
+        }
+        <div class="col-md-2">
+            <label>Start date</label>
+            <input type="date" class="form-control" @bind="_startDate" />
+        </div>
+        <div class="col-md-2">
+            <label>Base currency</label>
+            <select class="form-select" @bind="_baseCurrency">
+                @foreach (var currencyCode in SupportedCurrencies.Codes)
+                {
+                    <option value="@currencyCode">@currencyCode</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label>Shares</label>
+            <input type="number" class="form-control" step="0.0001" @bind="_shares" />
+        </div>
+    </div>
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <input type="checkbox" id="inflation-toggle" @bind="_inflationAdjusted" />
+            <label for="inflation-toggle">Inflation-adjusted (to today's prices)</label>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-primary" @onclick="BuildChartAsync">Show chart</button>
+        </div>
+    </div>
+
+    <div class="chart-area">
+    @if (_chartError is not null)
+    {
+        <p class="text-danger">@_chartError</p>
+    }
+    else if (_result is not null)
+    {
+        @if (_result.PrimarySeries.Count == 0)
+        {
+            <p><em>No resolvable price/FX history for @_result.PrimarySymbol over this period.</em></p>
+        }
+        else
+        {
+            <div class="chart-canvas">
+                <ApexChart TItem="ChartPoint" Title="@($"Value in {_result.BaseCurrency}")" XAxisType="XAxisType.Datetime" Height="@("100%")" Width="@("100%")">
+                    <ApexPointSeries TItem="ChartPoint"
+                                     Items="_result.PrimarySeries"
+                                     Name="@_result.PrimarySymbol"
+                                     SeriesType="SeriesType.Line"
+                                     XValue="p => p.Date.ToDateTime(TimeOnly.MinValue)"
+                                     YValue="p => p.ValueInBaseCurrency" />
+                    @if (_result.ComparisonSeries.Count > 0)
+                    {
+                        <ApexPointSeries TItem="ChartPoint"
+                                         Items="_result.ComparisonSeries"
+                                         Name="@_result.ComparisonSymbol"
+                                         SeriesType="SeriesType.Line"
+                                         XValue="p => p.Date.ToDateTime(TimeOnly.MinValue)"
+                                         YValue="p => p.ValueInBaseCurrency" />
+                    }
+                </ApexChart>
+            </div>
+        }
+
+        @if (_result.ComparisonSeries.Count == 0 && _result.PrimarySeries.Count > 0)
+        {
+            <p><em>No comparison (@_result.ComparisonSymbol) series could be resolved for this period.</em></p>
+        }
+    }
+    </div>
+}
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "securityId")]
+    private int? QuerySecurityId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "startDate")]
+    private string? QueryStartDate { get; set; }
+
+    [SupplyParameterFromQuery(Name = "shares")]
+    private decimal? QueryShares { get; set; }
+
+    private bool _ready;
+    private string? _error;
+    private string? _chartError;
+
+    private List<Security> _knownSecurities = [];
+    private int _selectedSecurityId;
+    private string _manualSymbol = "";
+    private string _manualCurrency = "USD";
+    private DateOnly _startDate = DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-1);
+    private string _baseCurrency = BaseCurrencyConversionService.DefaultBaseCurrency;
+    private decimal _shares = 1m;
+    private bool _inflationAdjusted = true;
+
+    private PositionValueChartResult? _result;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var transactions = await SecurityTransactionRepository.GetAllAsync();
+            _knownSecurities = transactions
+                .Select(t => t.Position!.Security!)
+                .DistinctBy(s => s.Id)
+                .OrderBy(s => s.Symbol)
+                .ToList();
+
+            _baseCurrency = await BaseCurrencyConversionService.GetBaseCurrencyAsync();
+
+            if (QueryStartDate is not null && DateOnly.TryParse(QueryStartDate, out var parsedDate))
+                _startDate = parsedDate;
+            if (QueryShares is not null)
+                _shares = QueryShares.Value;
+            if (QuerySecurityId is not null && _knownSecurities.Any(s => s.Id == QuerySecurityId))
+                _selectedSecurityId = QuerySecurityId.Value;
+
+            _ready = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load the position chart page.");
+            _error = "Could not load this page. See the Logs page for details.";
+        }
+    }
+
+    private async Task BuildChartAsync()
+    {
+        _chartError = null;
+        _result = null;
+
+        try
+        {
+            var security = await ResolveSecurityAsync();
+            if (security is null)
+                return;
+
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            if (_startDate > today)
+            {
+                _chartError = "Start date must not be in the future.";
+                return;
+            }
+
+            _result = await ChartService.BuildChartAsync(
+                security, _startDate, _baseCurrency, _shares, _inflationAdjusted, today);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to build the position value chart.");
+            _chartError = "Could not build the chart. See the Logs page for details.";
+        }
+    }
+
+    private async Task<Security?> ResolveSecurityAsync()
+    {
+        if (_selectedSecurityId != 0)
+            return _knownSecurities.First(s => s.Id == _selectedSecurityId);
+
+        if (string.IsNullOrWhiteSpace(_manualSymbol) || string.IsNullOrWhiteSpace(_manualCurrency))
+        {
+            _chartError = "Enter a symbol and currency, or pick a security from the list.";
+            return null;
+        }
+
+        var symbol = _manualSymbol.Trim();
+        var currency = _manualCurrency.Trim().ToUpperInvariant();
+
+        var existing = await SecurityRepository.GetBySymbolAndCurrencyAsync(symbol, currency);
+        if (existing is not null)
+            return existing;
+
+        return await SecurityRepository.AddAsync(new Security { Symbol = symbol, Name = symbol, Currency = currency });
+    }
+}

@@ -10,4 +10,13 @@ public static class VocabularyTypes
     /// missing key, or an empty <see cref="VocabularyEntry.Value"/>, both mean "no
     /// suffix" — the provider falls back to the plain symbol.</summary>
     public const string ExchangeYahooSuffix = "ExchangeYahooSuffix";
+
+    /// <summary>Manual inflation-rate overrides, keyed "{baseCurrency}:{year}" (e.g.
+    /// "USD:2026"). Value is the rate as a percentage number, matching
+    /// <see cref="InflationRate.Rate"/>'s convention (e.g. "5.2" for 5.2%) — used as a
+    /// fallback when the real inflation data source has no published figure yet for a
+    /// year (a very recent/current year is the common case). See
+    /// <c>PortfolioCalc.Core.Data.Inflation.VocabularyOverrideInflationRateProvider</c> and
+    /// doc/decisions.md.</summary>
+    public const string InflationRateOverride = "InflationRateOverride";
 }

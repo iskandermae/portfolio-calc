@@ -323,6 +323,152 @@ code. Add an entry here whenever a non-obvious design choice is made; don't let 
   `FxRateService`/`InflationRateService`/`BaseCurrencyConversionService`) that can
   realistically fail — adding the same wrapper there would be defensive scaffolding
   with nothing real behind it yet.
+- **Story 10 (position value chart) has no favorites table to pick a security from, since
+  story 12 (Favorites) isn't implemented yet.** Per explicit user decision, the security
+  picker instead builds its dropdown from every distinct `Position.Security` reachable via
+  `ISecurityTransactionRepository.GetAllAsync()` (owned or previously held — no new
+  repository method added, per CLAUDE.md's no-speculative-methods rule), plus a manual
+  free-text Symbol+Currency entry (get-or-create via `ISecurityRepository`, same pattern
+  IBKR import already uses) for a security that's never been transacted. A standalone
+  `PositionChart.razor` page holds this parameter form (security, start date, base
+  currency defaulting to the current base-currency setting, shares defaulting to 1,
+  inflation toggle defaulting on); `TransactionsReport.razor` also gained a per-row
+  "Chart" button that navigates there prefilled (security id, transaction date as start
+  date, transaction quantity as shares) via query string, covering the story's "build from
+  a selected transaction" requirement without needing story 12 at all.
+- **The chart's date-sampling boundary ("dates older than one year") is evaluated
+  per-candidate-date against a fixed cutoff of `today.AddYears(-1)`, using strict `<`.**
+  A candidate date strictly before the cutoff is coarsened to only its month's 1st; a
+  candidate on or after the cutoff (including one falling exactly on it) keeps the full
+  1st/7th/14th/21st sampling for its month. "Older than" reads as strict in the story's
+  wording, so the cutoff date itself is deliberately not coarsened. Covered by
+  `ChartDateSamplerTests` (`Core/Charting/ChartDateSampler.cs`), including the exact-cutoff
+  boundary.
+- **CSPX.L's real trading currency was confirmed against Yahoo Finance's live chart
+  endpoint before hard-coding it: `meta.currency` comes back `"USD"`, not GBP/GBp**, even
+  though it's LSE-listed (unlike VOD.L, which really is pence-quoted) — so
+  `PositionValueChartService`'s comparison series requests/creates the CSPX.L `Security`
+  row with `Currency = "USD"` and no pence conversion. Its `Exchange` is left null: the
+  `Symbol` already carries Yahoo's own ".L" suffix, and a non-null exchange would make
+  `YahooFinanceSecurityPriceProvider` try to append a second suffix from the
+  exchange-suffix vocabulary.
+- **The backward price/FX lookback helper (`AsOfLookbackDays`-style walk, see
+  `PositionValuationService`) is duplicated locally in `PositionValueChartService` rather
+  than extracted into a shared helper.** Two call sites doesn't justify a shared
+  abstraction, per the existing `FxRateService`/`SecurityPriceService` caching precedent
+  above — consistent with that established call, not a new one.
+- **A sample date's per-year inflation rate, and its price/FX-rate lookup, that can't be
+  resolved (even after the 7-day lookback / a genuinely unpublished year's inflation
+  figure) drops that one sample point from that series instead of throwing or defaulting
+  to zero.** Mirrors AC3 ("no crash on missing data points"), extended from
+  price/FX-only to inflation data too, since the same kind of gap (a source with no data
+  yet) applies to all three inputs. If the *start date* itself can't be resolved for the
+  primary security, the CSPX.L comparison series has no initial amount to size its
+  fractional share count from and is left empty for that build, rather than guessing an
+  initial value.
+- **A missing inflation rate for a year (chart or otherwise) is logged as a warning, and can
+  be filled in by hand via a new "InflationRateOverride" `VocabularyEntry` type.** Per an
+  explicit user request after the chart feature above shipped: `PositionValueChartService`
+  now logs `LogWarning` (base currency, year, and the exact Vocabularies key to add) whenever
+  a year's rate can't be resolved, instead of the gap only showing up indirectly as a missing
+  chart point. `VocabularyOverrideInflationRateProvider` (Data layer) wraps
+  `WorldBankInflationRateProvider`: it only consults the vocabulary when the wrapped call
+  fails (never shadowing a real published rate), keyed `"{baseCurrency}:{year}"` (e.g.
+  "USD:2026"), with the value stored as a percentage number to match `InflationRate.Rate`'s
+  existing convention (e.g. "5.2" for 5.2%) rather than a fraction. Registered in
+  `MauiProgram.cs` by splitting the `IInflationRateProvider` DI registration: the real
+  `WorldBankInflationRateProvider` is registered as itself (still via `AddHttpClient` for its
+  `HttpClient`), and `IInflationRateProvider` resolves to the wrapping decorator — the same
+  "composite provider" shape already anticipated for FX in this file. `Vocabularies.razor`
+  always offers this vocabulary as a tab (unlike other vocabulary types, which only appear
+  once a row exists) since a user must be able to add the very first override before any row
+  exists yet — the CRUD is otherwise 100% the page's existing generic Key/Value/Description
+  table, no new UI code.
+- **`InflationRate.Rate`'s percentage convention (e.g. 4.7 for 4.7%) — already documented on
+  the entity itself — was not being converted before being fed into
+  `InflationAdjustmentCalculator.ComputeForwardFactor`, which expects a fraction (e.g.
+  0.047).** Caught and fixed while wiring up the logging/override change above:
+  `PositionValueChartService.ApplyInflationAsync` now divides by 100 when caching a
+  successfully-resolved rate. This was a real bug in the original story 10 implementation,
+  not a pre-existing issue — flagged here since the pure `Core.Charting` unit tests (which
+  pass fractions directly) couldn't have caught it.
+- **`YahooFinanceSecurityPriceProvider` parses `indicators`/`quote`/`close` defensively
+  (`TryGetProperty` at every step) instead of a direct `GetProperty` chain.** A real crash
+  surfaced through the position-value chart (story 10), which calls this provider for many
+  historical dates per chart build: some dates return a response with `meta` but no
+  `indicators`/`quote`/`close` at all (e.g. a date before the symbol's first trade), which
+  the direct `GetProperty` chain turned into an unhandled `KeyNotFoundException` instead of
+  the intended `PriceStatus.UnsupportedSecurity`. This was a pre-existing bug in the
+  provider (not something the chart feature introduced), just never exercised by a caller
+  that queries this many distinct historical dates before. Same fix applied to
+  `meta`/`currency`, the other direct `GetProperty` chain in this method, for consistency.
+  Covered by two regression tests using a fake `HttpMessageHandler` (`FixedResponseHandler`)
+  instead of the real endpoint, since this response shape isn't reliably reproducible against
+  live data.
+- **`PositionValueChartService`'s per-sample-date price/FX lookups catch and log any
+  unexpected exception from the underlying provider, converting it into a failed-lookup
+  result (a gap for that one date) instead of letting it propagate and abort the whole chart
+  build.** This is defense-in-depth on top of the Yahoo fix above — any *future* malformed
+  response shape (from Yahoo or a later provider) degrades one chart point instead of the
+  entire chart, consistent with AC3's "no crash on missing data points" applying to
+  unexpected exceptions, not just the documented `PriceStatus`/`FxRateStatus` failure
+  outcomes. `BuildChartAsync` also logs one `LogWarning` per (security, date) or
+  (currency pair, date) gap actually excluded from a series (deduped across the initial-
+  amount/comparison-shares lookups and the main sampling loop, which can both query the
+  start date), plus a summary `LogInformation` line with resolved-point counts for both
+  series — all per an explicit user request to make chart data gaps and failures
+  diagnosable from the Logs page rather than only visible as "fewer points than expected"
+  or a generic caught-exception message.
+- **A custom `LoggingErrorBoundary` (`ErrorBoundary` subclass overriding `OnErrorAsync`) wraps
+  every routed page in `Routes.razor`, keyed per navigation (`@key="routeData"`).** Per an
+  explicit user report: navigating to a page that threw during render (observed on the
+  position-value chart page) showed .NET MAUI `BlazorWebView`'s generic "An unhandled error
+  has occurred / Reload" banner (`index.html`'s `#blazor-error-ui`), with no way to see what
+  actually went wrong and no path back except a full app reload. The boundary logs the real
+  exception via the normal `ILogger` pipeline (so it's on the Logs page) before rendering a
+  friendly in-page message with a link there, instead of the exception reaching
+  `BlazorWebView`'s default handling at all. `@key="routeData"` forces a fresh boundary
+  instance on every navigation — without it, `ErrorBoundary`'s "stay in ErrorContent until
+  `Recover()` is called" behavior would keep showing the error page even after navigating to
+  an unrelated route, since the Router's diffing would otherwise reuse the same boundary
+  instance. `AppDomain.UnhandledException`/`TaskScheduler.UnobservedTaskException` handlers
+  were also added in `MauiProgram.cs` as a belt-and-suspenders catch-all for exceptions
+  outside any component's render/lifecycle (e.g. an un-awaited background `Task`), logged the
+  same way — the error boundary alone only covers exceptions during rendering.
+- **A new `LogActivityTracker` singleton (constructed once in `MauiProgram.CreateMauiApp`,
+  shared with `FileLoggerProvider` and registered in DI for the Gui) flags whether a
+  Warning-or-above line has been written since the Logs page was last opened, so
+  `NavMenu.razor` can show a "New" badge on the Logs link.** Per an explicit user request
+  that a new problem shouldn't sit silently in a file nobody's looking at. Deliberately not a
+  full unread-count or per-entry read state — a single boolean flag, cleared the moment the
+  Logs page loads its content (`OnInitialized` calls `MarkSeen()`), is enough to answer "is
+  there something new to look at," which is all that was asked for. The tracker's `Changed`
+  event can fire from any thread (logging can happen from a background task), so `NavMenu`
+  marshals the resulting `StateHasChanged()` through `InvokeAsync`.
+- **`VocabularyOverrideInflationRateProvider` looks up its override by a case-insensitive
+  key match (fetching all `InflationRateOverride` entries and comparing client-side) instead
+  of `IVocabularyRepository.GetValueAsync`'s exact-match lookup, and tolerates a few
+  hand-typed value formats (surrounding whitespace, a trailing "%", a comma decimal
+  separator) instead of requiring the exact documented "5.2" shape.** Per a real user report:
+  after adding an override for `USD:2026`, the chart still logged "no rate available" with
+  no indication of why — with the original exact-match lookup, a key or value that didn't
+  match byte-for-byte (e.g. typed as "usd:2026", or with a "%" sign) would silently behave
+  identically to no override existing at all. The provider now also logs the outcome via a
+  newly-added `ILogger` dependency: which key it looked for, whether an entry was found, and
+  — if found but unparseable — the exact value that failed and why, at `Warning` (visible on
+  the Logs page) rather than silently falling through. This is the first Core/Data-layer
+  class in this app to take an `ILogger` dependency (`Microsoft.Extensions.Logging.Abstractions`
+  added to `PortfolioCalc.Core.csproj`); every other provider in this project just returns a
+  `Result` with an `ErrorMessage` and lets the caller decide whether to log, but this class
+  exists specifically as an operator-facing "did my manual override actually apply" tool, so
+  logging its own reasoning here (rather than only in the App-layer caller, which has no
+  visibility into *why* the override step failed) is warranted.
+  <br>The lenient value parsing deliberately excludes `NumberStyles.AllowThousands`: an
+  earlier version of this fix used the default `NumberStyles.Number`, under which "5,2"
+  parsed successfully as `52` (comma read as a thousands separator) instead of falling
+  through to the comma-as-decimal-point fallback — silently 10x-wrong is worse than the
+  original "not parseable" failure it was meant to fix, and was caught by a test
+  (`GetRateAsync_tolerates_common_hand_typed_value_formats`) before shipping.
 - **A position whose price or FX conversion doesn't come back `Success` is excluded from
   the portfolio value report's grand total and visually flagged, rather than shown with a
   caveat alongside a number.** `SecurityPriceService`/`FxRateService.GetPriceAsync`/

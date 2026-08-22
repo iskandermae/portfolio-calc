@@ -128,8 +128,10 @@ public sealed class YahooFinanceSecurityPriceProvider : ISecurityPriceProvider
             }
 
             var result = resultElement[0];
-            var meta = result.GetProperty("meta");
-            var resultCurrency = meta.GetProperty("currency").GetString();
+            if (!result.TryGetProperty("meta", out var meta) || !meta.TryGetProperty("currency", out var currencyElement))
+                return PriceResult.Unsupported($"Malformed price response for {yahooSymbol} on {date:yyyy-MM-dd} (no meta/currency)");
+
+            var resultCurrency = currencyElement.GetString();
 
             // "GBp" (pence) is a distinct currency code from "GBP" (pounds) in Yahoo's data —
             // ordinal, case-sensitive comparison here so a plain GBP-quoted security isn't
@@ -144,10 +146,21 @@ public sealed class YahooFinanceSecurityPriceProvider : ISecurityPriceProvider
                     $"Symbol {yahooSymbol} is quoted in {resultCurrency}, not the requested {currency}");
             }
 
-            var closes = result
-                .GetProperty("indicators")
-                .GetProperty("quote")[0]
-                .GetProperty("close");
+            // Yahoo's shape for "no trading data in this window" isn't consistent: sometimes
+            // "close" is an empty array (handled below), but sometimes "indicators"/"quote"/
+            // "close" is missing from the response entirely (e.g. a date before the symbol's
+            // first trade). TryGetProperty at every step, rather than GetProperty, so a
+            // missing property is this same "no trading data" outcome instead of an unhandled
+            // KeyNotFoundException — discovered via the position-value chart requesting many
+            // historical dates for real securities. See doc/decisions.md.
+            if (!result.TryGetProperty("indicators", out var indicators) ||
+                !indicators.TryGetProperty("quote", out var quotes) ||
+                quotes.ValueKind != JsonValueKind.Array ||
+                quotes.GetArrayLength() == 0 ||
+                !quotes[0].TryGetProperty("close", out var closes))
+            {
+                return PriceResult.Unsupported($"No trading data for {yahooSymbol} on {date:yyyy-MM-dd} (market likely closed)");
+            }
 
             if (closes.ValueKind != JsonValueKind.Array || closes.GetArrayLength() == 0)
                 return PriceResult.Unsupported($"No trading data for {yahooSymbol} on {date:yyyy-MM-dd} (market likely closed)");

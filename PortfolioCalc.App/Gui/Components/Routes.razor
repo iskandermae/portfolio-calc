@@ -1,6 +1,19 @@
 ﻿<Router AppAssembly="typeof(MauiProgram).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        <!-- @key forces a fresh boundary per navigation, so an error on one page doesn't
+             keep showing ErrorContent forever after the user navigates elsewhere — see
+             doc/decisions.md. -->
+        <LoggingErrorBoundary @key="routeData">
+            <ChildContent>
+                <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+                <FocusOnNavigate RouteData="routeData" Selector="h1" />
+            </ChildContent>
+            <ErrorContent>
+                <div class="alert alert-danger m-3">
+                    <p><strong>Something went wrong loading this page.</strong></p>
+                    <p>See the <a href="logs">Logs page</a> for the actual error.</p>
+                </div>
+            </ErrorContent>
+        </LoggingErrorBoundary>
     </Found>
 </Router>

@@ -1,0 +1,23 @@
+/* Fills the viewport height instead of letting the chart push the page taller
+   than the window (see doc/decisions.md) — the page's own root becomes a flex
+   column sized to the viewport, and the chart area/canvas absorb whatever
+   space the form controls above them don't use, resizing live with the
+   window via ApexChart's Height="100%"/RedrawOnWindowResize. */
+.chart-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 1.1rem);
+    overflow: hidden;
+}
+
+.chart-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.chart-canvas {
+    flex: 1 1 auto;
+    min-height: 0;
+}

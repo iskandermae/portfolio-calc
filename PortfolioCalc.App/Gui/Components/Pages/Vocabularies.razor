@@ -89,6 +89,13 @@ else
         }
         else if (_activeTab is not null)
         {
+            @if (_activeTab == VocabularyTypes.InflationRateOverride)
+            {
+                <p><em>Key: "{baseCurrency}:{year}" (e.g. "USD:2026"). Value: the rate as a
+                   percentage number (e.g. "5.2" for 5.2%). Only used when the real inflation
+                   data source has no published figure for that year — see the Logs page for
+                   which base currency/year is missing.</em></p>
+            }
             <table class="table">
                 <thead>
                     <tr>
@@ -148,7 +155,12 @@ else
     {
         try
         {
-            _vocabularyTypes = await VocabularyRepository.GetTypesAsync();
+            // InflationRateOverride is always offered even with no rows yet (unlike other
+            // vocabularies, which only appear once a row exists) — see doc/decisions.md.
+            _vocabularyTypes = (await VocabularyRepository.GetTypesAsync())
+                .Union([VocabularyTypes.InflationRateOverride])
+                .OrderBy(t => t)
+                .ToList();
             _activeTab = _vocabularyTypes.FirstOrDefault();
             if (_activeTab is not null)
                 await LoadEntriesAsync(_activeTab);

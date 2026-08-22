@@ -1,5 +1,6 @@
 @page "/logs"
 @using PortfolioCalc.Core.Data
+@inject PortfolioCalc.App.Logging.LogActivityTracker LogActivityTracker
 
 <h1>Logs</h1>
 
@@ -23,7 +24,13 @@ else
 
     private string? _content;
 
-    protected override void OnInitialized() => LoadContent();
+    protected override void OnInitialized()
+    {
+        LoadContent();
+        // Visiting this page is what "seeing" the new entries means — clears the NavMenu
+        // highlight (see doc/decisions.md).
+        LogActivityTracker.MarkSeen();
+    }
 
     private void LoadContent()
     {

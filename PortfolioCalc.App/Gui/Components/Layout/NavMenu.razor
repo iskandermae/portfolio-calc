@@ -1,4 +1,7 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
+﻿@implements IDisposable
+@inject PortfolioCalc.App.Logging.LogActivityTracker LogActivityTracker
+
+<div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="">Portfolio Calculator</a>
     </div>
@@ -29,6 +32,11 @@
             </NavLink>
         </div>
         <div class="nav-item px-3">
+            <NavLink class="nav-link" href="position-chart">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Position Chart
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
             <NavLink class="nav-link" href="settings">
                 <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Settings
             </NavLink>
@@ -46,7 +54,22 @@
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="logs">
                 <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Logs
+                @if (LogActivityTracker.HasUnseenEntries)
+                {
+                    <span class="badge bg-danger ms-1">New</span>
+                }
             </NavLink>
         </div>
     </nav>
 </div>
+
+@code {
+    protected override void OnInitialized() => LogActivityTracker.Changed += OnLogActivityChanged;
+
+    // The tracker's Changed event may fire from a background/logging thread (a warning can
+    // be logged from anywhere in the app), so the UI update is marshalled back via
+    // InvokeAsync rather than calling StateHasChanged directly.
+    private void OnLogActivityChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => LogActivityTracker.Changed -= OnLogActivityChanged;
+}
