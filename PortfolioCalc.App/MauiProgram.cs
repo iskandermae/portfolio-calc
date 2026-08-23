@@ -6,6 +6,7 @@ using PortfolioCalc.App.Application.Import.Ibkr;
 using PortfolioCalc.App.Application.Inflation;
 using PortfolioCalc.App.Application.Positions;
 using PortfolioCalc.App.Application.Prices;
+using PortfolioCalc.App.Application.Transactions;
 using PortfolioCalc.App.Logging;
 using PortfolioCalc.Core.Data;
 using PortfolioCalc.Core.Data.Fx;
@@ -77,6 +78,8 @@ public static class MauiProgram
 			sp.GetRequiredService<WorldBankInflationRateProvider>(), sp.GetRequiredService<IVocabularyRepository>(),
 			sp.GetRequiredService<ILogger<VocabularyOverrideInflationRateProvider>>()));
 		builder.Services.AddScoped<InflationRateService>();
+		builder.Services.AddScoped<PositionPerformanceService>();
+		builder.Services.AddScoped<TransactionPerformanceService>();
 
 		// App-wide file logging so a non-developer user has somewhere to look (the Logs
 		// page) instead of a page silently going blank on an unhandled exception — see

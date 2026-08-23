@@ -80,6 +80,7 @@ public class PositionValuationService(
                 grandTotal += valueInBaseCurrency!.Value;
 
             valuations.Add(new PositionValuation(
+                held.Position.Id,
                 held.Position.Account!.Name,
                 security.Symbol,
                 security.Currency,

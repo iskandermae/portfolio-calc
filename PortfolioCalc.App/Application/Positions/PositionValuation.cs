@@ -7,6 +7,7 @@ namespace PortfolioCalc.App.Application.Positions;
 /// AC #4, an unresolved position is flagged and excluded from the grand total rather than
 /// silently valued at a missing/unvalidated figure.</summary>
 public sealed record PositionValuation(
+    int PositionId,
     string AccountName,
     string SecuritySymbol,
     string SecurityCurrency,

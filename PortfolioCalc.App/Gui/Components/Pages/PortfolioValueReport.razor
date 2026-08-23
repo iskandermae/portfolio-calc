@@ -2,6 +2,7 @@
 @using PortfolioCalc.App.Application.Positions
 @using PortfolioValueReportModel = PortfolioCalc.App.Application.Positions.PortfolioValueReport
 @inject PositionValuationService PositionValuationService
+@inject PositionPerformanceService PositionPerformanceService
 @inject ILogger<PortfolioValueReport> Logger
 
 <h1>Current Portfolio Value</h1>
@@ -14,74 +15,153 @@ else if (_report is null)
 {
     <p><em>Loading...</em></p>
 }
-else if (_report.Positions.Count == 0)
-{
-    <p><em>No positions currently held.</em></p>
-}
 else
 {
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Account</th>
-                <th>Security</th>
-                <th>Quantity</th>
-                <th>Price</th>
-                <th>Value (security currency)</th>
-                <th>Value (@_report.BaseCurrency)</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var position in _report.Positions)
-            {
-                <tr class="@(position.IsResolved ? "" : "table-warning")">
-                    <td>@position.AccountName</td>
-                    <td>@position.SecuritySymbol (@position.SecurityCurrency)</td>
-                    <td>@position.Quantity</td>
-                    <td>@(position.Price?.ToString("N2") ?? "-")</td>
-                    <td>@(position.ValueInSecurityCurrency?.ToString("N2") ?? "-")</td>
-                    <td>@(position.ValueInBaseCurrency?.ToString("N2") ?? "-")</td>
-                    <td>
-                        @if (!position.IsResolved)
-                        {
-                            <span class="badge bg-warning text-dark">Unresolved — excluded from total</span>
-                        }
-                    </td>
-                </tr>
-            }
-        </tbody>
-        <tfoot>
-            <tr>
-                <th colspan="5" class="text-end">Grand total (@_report.BaseCurrency)</th>
-                <th>@_report.GrandTotalInBaseCurrency.ToString("N2")</th>
-                <th></th>
-            </tr>
-        </tfoot>
-    </table>
+    <p>
+        <input type="checkbox" id="show-analytics" checked="@_showAnalytics" @onchange="e => ToggleShowAnalyticsAsync((bool)e.Value!)" />
+        <label for="show-analytics">Show analytics</label>
+        @if (_showAnalytics)
+        {
+            <span class="ms-3">
+                <input type="checkbox" id="inflation-adjusted" checked="@_inflationAdjusted"
+                       @onchange="e => ToggleInflationAdjustedAsync((bool)e.Value!)" />
+                <label for="inflation-adjusted">Inflation-adjusted (to today's prices)</label>
+            </span>
+        }
+    </p>
 
-    @if (_report.Positions.Any(p => !p.IsResolved))
+    if (_report.Positions.Count == 0)
     {
-        <p><em>Positions highlighted above could not be priced and/or converted to @_report.BaseCurrency
-           (unsupported security, pending validation, or a network error) and are excluded from the grand total.</em></p>
+        <p><em>No positions currently held.</em></p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Account</th>
+                    <th>Security</th>
+                    <th>Quantity</th>
+                    <th>Price</th>
+                    <th>Value (security currency)</th>
+                    <th>Value (@_report.BaseCurrency)</th>
+                    @if (_showAnalytics)
+                    {
+                        <th>Net invested (@_report.BaseCurrency)</th>
+                        <th>Dividends (@_report.BaseCurrency)</th>
+                        <th>Fees+taxes (@_report.BaseCurrency)</th>
+                        <th>Cash flow result (@_report.BaseCurrency)</th>
+                    }
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var position in _report.Positions)
+                {
+                    var figures = _performanceByPositionId.GetValueOrDefault(position.PositionId);
+                    <tr class="@(position.IsResolved ? "" : "table-warning")">
+                        <td>@position.AccountName</td>
+                        <td>@position.SecuritySymbol (@position.SecurityCurrency)</td>
+                        <td>@position.Quantity</td>
+                        <td>@(position.Price?.ToString("N2") ?? "-")</td>
+                        <td>@(position.ValueInSecurityCurrency?.ToString("N2") ?? "-")</td>
+                        <td>@(position.ValueInBaseCurrency?.ToString("N2") ?? "-")</td>
+                        @if (_showAnalytics)
+                        {
+                            <td class="@(figures is { IsFullyResolved: false } ? "table-warning" : "")">@(figures?.NetInvested.ToString("N2") ?? "-")</td>
+                            <td class="@(figures is { IsFullyResolved: false } ? "table-warning" : "")">@(figures?.TotalDividends.ToString("N2") ?? "-")</td>
+                            <td class="@(figures is { IsFullyResolved: false } ? "table-warning" : "")">@(figures?.TotalFeesAndTaxes.ToString("N2") ?? "-")</td>
+                            <td class="@(figures is { IsFullyResolved: false } ? "table-warning" : "")">@(figures?.CashFlowResult.ToString("N2") ?? "-")</td>
+                        }
+                        <td>
+                            @if (!position.IsResolved)
+                            {
+                                <span class="badge bg-warning text-dark">Unresolved — excluded from total</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="5" class="text-end">Grand total (@_report.BaseCurrency)</th>
+                    <th>@_report.GrandTotalInBaseCurrency.ToString("N2")</th>
+                    @if (_showAnalytics)
+                    {
+                        <th colspan="4"></th>
+                    }
+                    <th></th>
+                </tr>
+            </tfoot>
+        </table>
+
+        @if (_report.Positions.Any(p => !p.IsResolved))
+        {
+            <p><em>Positions highlighted above could not be priced and/or converted to @_report.BaseCurrency
+               (unsupported security, pending validation, or a network error) and are excluded from the grand total.</em></p>
+        }
+        @if (_showAnalytics && _performanceByPositionId.Values.Any(f => !f.IsFullyResolved))
+        {
+            <p><em>Analytics columns highlighted above are based on incomplete data (a price, FX rate, or
+               inflation rate for one of the position's transactions could not be resolved).</em></p>
+        }
     }
 }
 
 @code {
     private PortfolioValueReportModel? _report;
+    private Dictionary<int, PositionPerformanceFigures> _performanceByPositionId = [];
+    private bool _showAnalytics;
+    private bool _inflationAdjusted;
+    private DateOnly _today;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            _report = await PositionValuationService.GetCurrentValueAsync(today);
+            _today = DateOnly.FromDateTime(DateTime.UtcNow);
+            _report = await PositionValuationService.GetCurrentValueAsync(_today);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load the portfolio value report.");
             _error = "Could not load the portfolio value report. See the Logs page for details.";
+        }
+    }
+
+    private async Task ToggleShowAnalyticsAsync(bool show)
+    {
+        _showAnalytics = show;
+        if (_showAnalytics)
+            await LoadPerformanceAsync();
+    }
+
+    private async Task ToggleInflationAdjustedAsync(bool inflationAdjusted)
+    {
+        _inflationAdjusted = inflationAdjusted;
+        await LoadPerformanceAsync();
+    }
+
+    private async Task LoadPerformanceAsync()
+    {
+        if (_report is null)
+            return;
+
+        try
+        {
+            var byPositionId = new Dictionary<int, PositionPerformanceFigures>();
+            foreach (var position in _report.Positions)
+            {
+                byPositionId[position.PositionId] = await PositionPerformanceService.GetPerformanceAsync(
+                    position.PositionId, position.ValueInBaseCurrency, _inflationAdjusted, _today);
+            }
+            _performanceByPositionId = byPositionId;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load position analytics.");
+            _error = "Could not load position analytics. See the Logs page for details.";
         }
     }
 }

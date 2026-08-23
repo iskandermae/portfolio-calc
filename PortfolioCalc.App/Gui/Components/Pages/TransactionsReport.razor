@@ -1,10 +1,14 @@
 @page "/transactions-report"
 @using System.Text.Json
+@using PortfolioCalc.App.Application.Fx
+@using PortfolioCalc.App.Application.Transactions
 @using PortfolioCalc.Core.Domain
 @using PortfolioCalc.Core.Repositories
 @inject ISecurityTransactionRepository SecurityTransactionRepository
 @inject ICashTransactionRepository CashTransactionRepository
 @inject IUiLayoutSettingRepository LayoutRepository
+@inject TransactionPerformanceService TransactionPerformanceService
+@inject BaseCurrencyConversionService BaseCurrencyConversionService
 @inject ILogger<TransactionsReport> Logger
 @inject NavigationManager NavigationManager
 
@@ -38,6 +42,19 @@ else
         <label for="show-secondary">Show income/fee transactions too (Tax, Interest, Dividend)</label>
     </p>
 
+    <p>
+        <input type="checkbox" id="show-analytics" checked="@_showAnalytics" @onchange="e => ToggleShowAnalyticsAsync((bool)e.Value!)" />
+        <label for="show-analytics">Show analytics</label>
+        @if (_showAnalytics)
+        {
+            <span class="ms-3">
+                <input type="checkbox" id="inflation-adjusted" checked="@_inflationAdjusted"
+                       @onchange="e => ToggleInflationAdjustedAsync((bool)e.Value!)" />
+                <label for="inflation-adjusted">Inflation-adjusted (to today's prices)</label>
+            </span>
+        }
+    </p>
+
     <table class="table">
         <thead>
             <tr>
@@ -47,16 +64,27 @@ else
                         @column.Label@(_sortKey == column.Key ? (_sortDescending ? " ▼" : " ▲") : "")
                     </th>
                 }
+                @if (_showAnalytics)
+                {
+                    <th>CAGR (@_baseCurrency)</th>
+                    <th>Cash flow result (@_baseCurrency)</th>
+                }
                 <th></th>
             </tr>
         </thead>
         <tbody>
             @foreach (var row in _sortedRows)
             {
+                var performance = row.TransactionId is not null ? _performanceByTransactionId.GetValueOrDefault(row.TransactionId.Value) : null;
                 <tr>
                     @foreach (var column in _columns.Where(c => c.Visible))
                     {
                         <td class="@(IsNumericColumn(column.Key) ? "text-end" : "")">@FormatCell(row, column.Key)</td>
+                    }
+                    @if (_showAnalytics)
+                    {
+                        <td class="text-end">@(performance?.Cagr is { } cagr ? cagr.ToString("P2") : "")</td>
+                        <td class="text-end">@(performance?.CashFlowResult is { } cashFlow ? cashFlow.ToString("N2") : "")</td>
                     }
                     <td>
                         @if (row.SecurityId is not null)
@@ -75,7 +103,8 @@ else
 
     private record TransactionRow(
         DateOnly Date, string Kind, TransactionCategory Category, string Account, string? Security,
-        decimal? Quantity, decimal Amount, string Currency, decimal? Fee, string? Note, int? SecurityId);
+        decimal? Quantity, decimal Amount, string Currency, decimal? Fee, string? Note, int? SecurityId,
+        int? TransactionId);
 
     private class ColumnState
     {
@@ -120,12 +149,20 @@ else
     private string _sortKey = "Date";
     private bool _sortDescending;
     private bool _showSecondary;
+    private bool _showAnalytics;
+    private bool _inflationAdjusted;
+    private DateOnly _today;
+    private string _baseCurrency = "";
+    private Dictionary<int, SecurityTransaction> _buyTransactionsById = [];
+    private Dictionary<int, BuyTransactionPerformance> _performanceByTransactionId = [];
     private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
+            _today = DateOnly.FromDateTime(DateTime.UtcNow);
+            _baseCurrency = await BaseCurrencyConversionService.GetBaseCurrencyAsync();
             await LoadLayoutAsync();
             await LoadRowsAsync();
         }
@@ -188,16 +225,51 @@ else
             .Select(t => new TransactionRow(
                 t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
                 t.Position!.Account!.Name, t.Position.Security!.Symbol,
-                t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note, t.Position.Security.Id))
+                t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note, t.Position.Security.Id, t.Id))
             .Concat(cashTransactions
                 .Select(t => new TransactionRow(
                     t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
                     t.Account!.Name, null,
-                    null, t.Amount, t.Currency, t.FeeAmount, t.Note, null)))
+                    null, t.Amount, t.Currency, t.FeeAmount, t.Note, null, null)))
             .ToList();
 
         _rows = rows;
+        _buyTransactionsById = securityTransactions
+            .Where(t => t.Type == SecurityTransactionType.Buy)
+            .ToDictionary(t => t.Id);
         ApplySort();
+    }
+
+    private async Task ToggleShowAnalyticsAsync(bool show)
+    {
+        _showAnalytics = show;
+        if (_showAnalytics)
+            await LoadPerformanceAsync();
+    }
+
+    private async Task ToggleInflationAdjustedAsync(bool inflationAdjusted)
+    {
+        _inflationAdjusted = inflationAdjusted;
+        await LoadPerformanceAsync();
+    }
+
+    private async Task LoadPerformanceAsync()
+    {
+        try
+        {
+            var byTransactionId = new Dictionary<int, BuyTransactionPerformance>();
+            foreach (var transaction in _buyTransactionsById.Values)
+            {
+                byTransactionId[transaction.Id] = await TransactionPerformanceService.GetBuyPerformanceAsync(
+                    transaction, _inflationAdjusted, _today);
+            }
+            _performanceByTransactionId = byTransactionId;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load transaction analytics.");
+            _error = "Could not load transaction analytics. See the Logs page for details.";
+        }
     }
 
     private void ApplySort()
