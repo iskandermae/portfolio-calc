@@ -138,3 +138,27 @@ remove/update an entry once it's superseded rather than layering a correction on
   converts via its own `FeeCurrency`; `TaxAmount` via the transaction's `Currency`.
 - The Transaction TAB's CAGR/cash-flow result only inflation-adjusts the buy's initial
   investment — its current value is already expressed in today's prices by construction.
+- `TaxBaseCurrency` (story 12) is a second field on the `AppSettings` singleton, defaulted
+  (not `required`) so existing call sites that only set `BaseCurrency` keep compiling.
+- `CompositeFxRateProvider` (story 12) takes both inner providers by `IFxRateProvider`
+  interface, not concrete type, so its UAH-vs-default routing is unit-testable against fakes;
+  DI still wires it to the concrete `FrankfurterFxRateProvider`/`NbuFxRateProvider`.
+- The tax-estimation report's "FX rate" columns are blended totals (base-currency sum ÷
+  security-currency sum), on both the buy side (average cost spans multiple buy dates/rates)
+  and the sell side (an actual sell and a proposed sell for the same security can have
+  different dates too) — kept symmetric rather than treating only one side as multi-date.
+- The tax-estimation report distinguishes historical dates (a buy, an actual sell, a
+  TransferIn — no lookback, missing data stops the whole report via
+  `TaxEstimationException`) from "today" lookups (a proposed sell's price/FX — 5-day
+  lookback, logged on fallback) — a deliberately different rule from every other report's
+  single 7-day lookback, per explicit business decision.
+- The tax-estimation report is grouped and computed per `Position` (Account × Security), not
+  aggregated by security — unlike the portfolio value/performance reports (09–11), which
+  deliberately do aggregate across a security's positions. Cost basis, held-quantity
+  validation, and actual/proposed sells all stay within one account; the same security in two
+  accounts gets two independent rows. `ProposedSell` carries a `PositionId`, not a
+  `SecurityId`. An optional account filter scopes the whole computation the same way.
+- `AppSettings.TaxBaseCurrency`'s `GetTaxBaseCurrencyAsync` treats a blank value (not just a
+  missing settings row) as "unset" and logs a warning before defaulting — the migration that
+  added the column backfilled existing rows with `""`, not a real default, so an
+  already-existing installation silently got an empty FX "to" currency without this check.

@@ -6,6 +6,7 @@ using PortfolioCalc.App.Application.Import.Ibkr;
 using PortfolioCalc.App.Application.Inflation;
 using PortfolioCalc.App.Application.Positions;
 using PortfolioCalc.App.Application.Prices;
+using PortfolioCalc.App.Application.Tax;
 using PortfolioCalc.App.Application.Transactions;
 using PortfolioCalc.App.Logging;
 using PortfolioCalc.Core.Data;
@@ -55,7 +56,13 @@ public static class MauiProgram
 		builder.Services.AddScoped<IbkrImportService>();
 
 		builder.Services.AddScoped<IFxRateRepository, FxRateRepository>();
-		builder.Services.AddHttpClient<IFxRateProvider, FrankfurterFxRateProvider>();
+		builder.Services.AddHttpClient<FrankfurterFxRateProvider>();
+		builder.Services.AddHttpClient<NbuFxRateProvider>();
+		// Frankfurter doesn't cover UAH (story 12); the composite routes a UAH-involving
+		// pair to the NBU-backed provider and everything else to Frankfurter — see
+		// doc/decisions.md.
+		builder.Services.AddScoped<IFxRateProvider>(sp => new CompositeFxRateProvider(
+			sp.GetRequiredService<FrankfurterFxRateProvider>(), sp.GetRequiredService<NbuFxRateProvider>()));
 		builder.Services.AddScoped<FxRateService>();
 
 		builder.Services.AddScoped<ISecurityPriceRepository, SecurityPriceRepository>();
@@ -80,6 +87,8 @@ public static class MauiProgram
 		builder.Services.AddScoped<InflationRateService>();
 		builder.Services.AddScoped<PositionPerformanceService>();
 		builder.Services.AddScoped<TransactionPerformanceService>();
+		builder.Services.AddScoped<TaxEstimationService>();
+		builder.Services.AddScoped<PortfolioCalc.App.Gui.State.TaxEstimationPageState>();
 
 		// App-wide file logging so a non-developer user has somewhere to look (the Logs
 		// page) instead of a page silently going blank on an unhandled exception — see

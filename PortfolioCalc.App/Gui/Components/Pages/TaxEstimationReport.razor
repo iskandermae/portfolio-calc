@@ -1,0 +1,274 @@
+@page "/tax-estimation-report"
+@using PortfolioCalc.App.Application.Positions
+@using PortfolioCalc.App.Application.Tax
+@using TaxEstimationReportModel = PortfolioCalc.App.Application.Tax.TaxEstimationReport
+@using PortfolioCalc.App.Gui.State
+@using PortfolioCalc.Core.Domain
+@inject PositionValuationService PositionValuationService
+@inject TaxEstimationService TaxEstimationService
+@inject TaxEstimationPageState State
+@inject ILogger<TaxEstimationReport> Logger
+
+<h1>Gross Gain for the Current Tax Year</h1>
+
+@if (State.Error is not null)
+{
+    <p class="text-danger">@State.Error</p>
+}
+
+<div class="mb-3">
+    <label for="taxYearStart" class="form-label">Tax year start</label>
+    <input type="date" id="taxYearStart" class="form-control" style="max-width: 12rem"
+           value="@State.TaxYearStart!.Value.ToString("yyyy-MM-dd")"
+           @onchange="e => State.TaxYearStart = DateOnly.Parse((string)e.Value!)" />
+</div>
+
+<div class="mb-3">
+    <label for="accountFilter" class="form-label">Account</label>
+    <select id="accountFilter" class="form-select" style="max-width: 16rem"
+            value="@(State.AccountIdFilter?.ToString() ?? "")"
+            @onchange="e => OnAccountFilterChanged((string)e.Value!)">
+        <option value="">-- All accounts --</option>
+        @foreach (var account in _accounts)
+        {
+            <option value="@account.Id">@account.Name</option>
+        }
+    </select>
+</div>
+
+<p><strong>Tax base currency:</strong> @_baseCurrency <em>(set on the Settings page)</em></p>
+
+<h5>Positions to sell today</h5>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Account</th>
+            <th>Security</th>
+            <th>Currently held</th>
+            <th>Shares</th>
+            <th>Total amount</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var row in State.ProposedRows)
+        {
+            <tr>
+                <td colspan="2">
+                    <select class="form-select" @bind="row.PositionId" @bind:after="() => OnRowPositionChanged(row)">
+                        <option value="0">-- select --</option>
+                        @foreach (var held in _selectablePositions)
+                        {
+                            <option value="@held.PositionId">@held.AccountName — @held.Symbol (@held.Currency)</option>
+                        }
+                    </select>
+                </td>
+                <td>@(row.PositionId != 0 ? HeldQuantityFor(row.PositionId).ToString("N2") : "")</td>
+                <td>
+                    <input type="number" step="0.0001" class="form-control"
+                           @bind="row.Shares" @bind:after="() => OnSharesChangedAsync(row)" />
+                </td>
+                <td>
+                    <input type="number" step="0.01" class="form-control"
+                           @bind="row.Amount" @bind:after="() => OnAmountChangedAsync(row)" />
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="() => State.ProposedRows.Remove(row)">Remove</button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+<button class="btn btn-sm btn-outline-secondary" @onclick="() => State.ProposedRows.Add(new())">Add position</button>
+
+<div class="mt-3">
+    <button class="btn btn-primary" @onclick="CalculateAsync">Calculate</button>
+</div>
+
+@if (State.Report is not null)
+{
+    <table class="table mt-4">
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th>Security</th>
+                <th>Security currency</th>
+                <th>Qty sold</th>
+                <th>Avg buy cost (security currency)</th>
+                <th>Sell amount (security currency)</th>
+                <th>FX rate — buy</th>
+                <th>FX rate — sell</th>
+                <th>Avg buy cost (@State.Report.BaseCurrency)</th>
+                <th>Sell amount (@State.Report.BaseCurrency)</th>
+                <th>Gain (@State.Report.BaseCurrency)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in State.Report.Rows)
+            {
+                <tr>
+                    <td>@row.AccountName</td>
+                    <td>@row.SecuritySymbol</td>
+                    <td>@row.SecurityCurrency</td>
+                    <td>@row.QuantitySold.ToString("N2")</td>
+                    <td>@row.AverageBuyCostInSecurityCurrency.ToString("N2")</td>
+                    <td>@row.SellAmountInSecurityCurrency.ToString("N2")</td>
+                    <td>@row.BuyFxRate.ToString("N4")</td>
+                    <td>@row.SellFxRate.ToString("N4")</td>
+                    <td>@row.AverageBuyCostInBaseCurrency.ToString("N2")</td>
+                    <td>@row.SellAmountInBaseCurrency.ToString("N2")</td>
+                    <td>@row.GainInBaseCurrency.ToString("N2")</td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <th colspan="10" class="text-end">Total gain (@State.Report.BaseCurrency)</th>
+                <th>@State.Report.TotalGainInBaseCurrency.ToString("N2")</th>
+            </tr>
+        </tfoot>
+    </table>
+}
+
+@code {
+    private sealed class SelectablePosition
+    {
+        public int PositionId { get; set; }
+        public required string AccountName { get; set; }
+        public required string Symbol { get; set; }
+        public required string Currency { get; set; }
+        public decimal Quantity { get; set; }
+        public int AccountId { get; set; }
+    }
+
+    private DateOnly _today;
+    private string _baseCurrency = "";
+    private List<SelectablePosition> _heldPositions = [];
+    private List<SelectablePosition> _selectablePositions = [];
+    private List<Account> _accounts = [];
+    private Dictionary<int, Security> _securitiesByPositionId = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _today = DateOnly.FromDateTime(DateTime.UtcNow);
+            State.TaxYearStart ??= ComputeDefaultTaxYearStart(_today);
+            _baseCurrency = await TaxEstimationService.GetTaxBaseCurrencyAsync();
+
+            var held = await PositionValuationService.GetCurrentPositionsAsync();
+            _heldPositions = held
+                .Select(h => new SelectablePosition
+                {
+                    PositionId = h.Position.Id,
+                    AccountName = h.Position.Account!.Name,
+                    AccountId = h.Position.AccountId,
+                    Symbol = h.Position.Security!.Symbol,
+                    Currency = h.Position.Security.Currency,
+                    Quantity = h.Quantity,
+                })
+                .OrderBy(p => p.AccountName).ThenBy(p => p.Symbol)
+                .ToList();
+            _securitiesByPositionId = held.ToDictionary(h => h.Position.Id, h => h.Position.Security!);
+            _accounts = held.Select(h => h.Position.Account!).DistinctBy(a => a.Id).OrderBy(a => a.Name).ToList();
+
+            ApplyAccountFilter();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load the tax estimation report page.");
+            State.Error = "Could not load this page. See the Logs page for details.";
+        }
+    }
+
+    /// <summary>The most recent 6 April on or before today (inclusive) — see
+    /// doc/stories/12-tax-estimation-report.md.</summary>
+    private static DateOnly ComputeDefaultTaxYearStart(DateOnly today)
+    {
+        var thisYearStart = new DateOnly(today.Year, 4, 6);
+        return today >= thisYearStart ? thisYearStart : new DateOnly(today.Year - 1, 4, 6);
+    }
+
+    private void ApplyAccountFilter()
+    {
+        _selectablePositions = State.AccountIdFilter is null
+            ? _heldPositions
+            : _heldPositions.Where(p => p.AccountId == State.AccountIdFilter.Value).ToList();
+    }
+
+    private void OnAccountFilterChanged(string value)
+    {
+        State.AccountIdFilter = string.IsNullOrEmpty(value) ? null : int.Parse(value);
+        ApplyAccountFilter();
+    }
+
+    private decimal HeldQuantityFor(int positionId) =>
+        _heldPositions.FirstOrDefault(p => p.PositionId == positionId)?.Quantity ?? 0m;
+
+    private void OnRowPositionChanged(TaxEstimationPageState.ProposedRow row)
+    {
+        row.Shares = null;
+        row.Amount = null;
+    }
+
+    private async Task OnSharesChangedAsync(TaxEstimationPageState.ProposedRow row)
+    {
+        if (row.PositionId == 0 || row.Shares is not decimal shares)
+            return;
+
+        try
+        {
+            var price = await TaxEstimationService.GetLastAvailablePriceAsync(_securitiesByPositionId[row.PositionId], _today);
+            row.Amount = Math.Round(shares * price, 2);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to auto-calculate the amount for a proposed sell.");
+            State.Error = "Could not resolve a current price for that security. See the Logs page for details.";
+        }
+    }
+
+    private async Task OnAmountChangedAsync(TaxEstimationPageState.ProposedRow row)
+    {
+        if (row.PositionId == 0 || row.Amount is not decimal amount)
+            return;
+
+        try
+        {
+            var price = await TaxEstimationService.GetLastAvailablePriceAsync(_securitiesByPositionId[row.PositionId], _today);
+            if (price > 0)
+                row.Shares = Math.Round(amount / price, 4);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to auto-calculate the shares for a proposed sell.");
+            State.Error = "Could not resolve a current price for that security. See the Logs page for details.";
+        }
+    }
+
+    private async Task CalculateAsync()
+    {
+        State.Error = null;
+        State.Report = null;
+
+        try
+        {
+            var proposedSells = State.ProposedRows
+                .Where(r => r.PositionId != 0 && r.Shares is > 0)
+                .Select(r => new ProposedSell(r.PositionId, r.Shares!.Value))
+                .ToList();
+
+            State.Report = await TaxEstimationService.ComputeAsync(
+                State.TaxYearStart!.Value, proposedSells, _today, State.AccountIdFilter);
+        }
+        catch (TaxEstimationException ex)
+        {
+            State.Error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to compute the tax estimation report.");
+            State.Error = "Could not compute the report. See the Logs page for details.";
+        }
+    }
+}

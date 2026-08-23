@@ -28,20 +28,18 @@ public class IbkrImportServiceTests
             new CashTransactionRepository(context),
             new SecurityTransactionRepository(context));
 
-    private static string SamplePath => Path.Combine(AppContext.BaseDirectory, "samples", "all-total-export-2026.xml");
-
     [Fact]
     public async Task ImportAsync_imports_real_buy_and_sell_trades_from_the_sample_export()
     {
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         var result = await service.ImportAsync(stream);
 
-        // Sample has 10 ExchTrade rows with a non-empty securityID (AVSG, SWDA, XMWX buys;
-        // QQQ sell; SGLD x2 sells + 1 buy; VWRA x3 buys), plus a run of EUR.GBP/GBP.USD/
-        // EUR.USD FX-conversion rows which are not yet handled by this slice.
+        // The fixture has 10 ExchTrade rows with a non-empty securityID (TSTA/TSTB/TSTC x2/
+        // TSTD x3/TSTE x2/TSTF), plus a run of EUR.GBP/EUR.USD/GBP.USD FX-conversion rows
+        // which are not yet handled by this slice.
         Assert.True(result.ImportedCount >= 10);
 
         var tradeTransactions = context.SecurityTransactions
@@ -56,12 +54,12 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        var security = context.Securities.Single(s => s.Symbol == "AVSG");
+        var security = context.Securities.Single(s => s.Symbol == "TSTA");
         Assert.Equal("GBP", security.Currency);
-        Assert.Equal("AVSG", security.Name);
+        Assert.Equal("TSTA", security.Name);
     }
 
     [Fact]
@@ -70,11 +68,11 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
         var account = Assert.Single(context.Accounts);
-        Assert.Equal("my_ibkr_acc", account.Name);
+        Assert.Equal(IbkrSampleFixture.AccountAlias, account.Name);
     }
 
     [Fact]
@@ -83,20 +81,20 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        var avsgBuy = context.SecurityTransactions
+        var buy = context.SecurityTransactions
             .Include(t => t.Position!.Security)
-            .Single(t => t.Position!.Security!.Symbol == "AVSG");
+            .Single(t => t.Position!.Security!.Symbol == "TSTA");
 
-        Assert.Equal(SecurityTransactionType.Buy, avsgBuy.Type);
-        Assert.Equal(150m, avsgBuy.Quantity);
-        Assert.Equal(-(150m * 21.335m), avsgBuy.Amount);
-        Assert.Equal("GBP", avsgBuy.Currency);
-        Assert.Equal(-1.660125m, avsgBuy.FeeAmount);
-        Assert.Equal("GBP", avsgBuy.FeeCurrency);
-        Assert.Equal(new DateOnly(2026, 7, 6), avsgBuy.Date);
+        Assert.Equal(SecurityTransactionType.Buy, buy.Type);
+        Assert.Equal(100m, buy.Quantity);
+        Assert.Equal(-(100m * 20m), buy.Amount);
+        Assert.Equal("GBP", buy.Currency);
+        Assert.Equal(-2.5m, buy.FeeAmount);
+        Assert.Equal("GBP", buy.FeeCurrency);
+        Assert.Equal(new DateOnly(2026, 7, 6), buy.Date);
     }
 
     [Fact]
@@ -105,16 +103,16 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        var qqqSell = context.SecurityTransactions
+        var sell = context.SecurityTransactions
             .Include(t => t.Position!.Security)
-            .Single(t => t.Position!.Security!.Symbol == "QQQ");
+            .Single(t => t.Position!.Security!.Symbol == "TSTB");
 
-        Assert.Equal(SecurityTransactionType.Sell, qqqSell.Type);
-        Assert.Equal(15m, qqqSell.Quantity);
-        Assert.Equal(15m * 622.07m, qqqSell.Amount);
+        Assert.Equal(SecurityTransactionType.Sell, sell.Type);
+        Assert.Equal(15m, sell.Quantity);
+        Assert.Equal(15m * 600m, sell.Amount);
     }
 
     [Fact]
@@ -123,16 +121,15 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        // Sample has 8 "Deposits/Withdrawals" rows (all positive, so all Deposit — no
-        // negative/withdrawal row exists in this sample) and 11 "Broker Interest
-        // Received" rows.
+        // Fixture has 3 "Deposits/Withdrawals" rows (all positive, so all Deposit — no
+        // negative/withdrawal row exists) and 2 "Broker Interest Received" rows.
         var deposits = context.CashTransactions.Where(t => t.Type == CashTransactionType.Deposit).ToList();
         var interest = context.CashTransactions.Where(t => t.Type == CashTransactionType.Interest).ToList();
-        Assert.Equal(8, deposits.Count);
-        Assert.Equal(11, interest.Count);
+        Assert.Equal(3, deposits.Count);
+        Assert.Equal(2, interest.Count);
         Assert.All(deposits, d => Assert.True(d.Amount > 0));
         Assert.All(interest, i => Assert.True(i.Amount > 0));
         Assert.Equal(0, context.CashTransactions.Count(t => t.Type == CashTransactionType.Withdrawal));
@@ -144,12 +141,12 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        var deposit = context.CashTransactions.Single(t => t.Type == CashTransactionType.Deposit && t.Date == new DateOnly(2026, 1, 22));
+        var deposit = context.CashTransactions.Single(t => t.Type == CashTransactionType.Deposit && t.Date == new DateOnly(2026, 1, 10));
         Assert.Equal("EUR", deposit.Currency);
-        Assert.Equal(5000m, deposit.Amount);
+        Assert.Equal(1000m, deposit.Amount);
     }
 
     [Fact]
@@ -158,18 +155,18 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        // DB1(DE0005810055), 2026-05-19: one Dividends row (147 EUR) + one Withholding
-        // Tax row (-38.77 EUR) on the same date -> one Dividend transaction.
+        // TSTG, 2026-05-19: one Dividends row (100 EUR) + one Withholding Tax row (-20 EUR)
+        // on the same date -> one Dividend transaction.
         var dividend = context.SecurityTransactions
             .Include(t => t.Position!.Security)
-            .Single(t => t.Position!.Security!.Symbol == "DB1" && t.Date == new DateOnly(2026, 5, 19));
+            .Single(t => t.Position!.Security!.Symbol == "TSTG" && t.Date == new DateOnly(2026, 5, 19));
 
         Assert.Equal(SecurityTransactionType.Dividend, dividend.Type);
-        Assert.Equal(147m, dividend.Amount);
-        Assert.Equal(-38.77m, dividend.TaxAmount);
+        Assert.Equal(100m, dividend.Amount);
+        Assert.Equal(-20m, dividend.TaxAmount);
         Assert.Null(dividend.FeeAmount);
         Assert.Null(dividend.FeeCurrency);
     }
@@ -180,17 +177,17 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        // AGG(US4642872265), 2025-02-06: two Withholding Tax rows (+6.43, -0.44) and no
-        // Dividends/Payment-in-lieu row on that date -> one standalone Tax transaction.
+        // TSTH, 2024-11-15: two Withholding Tax rows (+5, -0.5) and no Dividends/
+        // Payment-in-lieu row on that date -> one standalone Tax transaction.
         var tax = context.SecurityTransactions
             .Include(t => t.Position!.Security)
-            .Single(t => t.Position!.Security!.Symbol == "AGG" && t.Date == new DateOnly(2025, 2, 6));
+            .Single(t => t.Position!.Security!.Symbol == "TSTH" && t.Date == new DateOnly(2024, 11, 15));
 
         Assert.Equal(SecurityTransactionType.Tax, tax.Type);
-        Assert.Equal(6.43m - 0.44m, tax.Amount);
+        Assert.Equal(5m - 0.5m, tax.Amount);
         Assert.Null(tax.FeeAmount);
     }
 
@@ -200,18 +197,18 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        // <Transfer type="FOP" direction="IN" quantity="35" isin="DE0005810055" .../>
+        // <Transfer type="FOP" direction="IN" quantity="40" symbol="TSTG" .../>
         var transferIn = context.SecurityTransactions
             .Include(t => t.Position!.Security)
             .Single(t => t.Type == SecurityTransactionType.TransferIn);
 
-        Assert.Equal("DB1", transferIn.Position!.Security!.Symbol);
-        Assert.Equal(35m, transferIn.Quantity);
+        Assert.Equal("TSTG", transferIn.Position!.Security!.Symbol);
+        Assert.Equal(40m, transferIn.Quantity);
         Assert.Equal(0m, transferIn.Amount);
-        Assert.Equal(new DateOnly(2026, 4, 14), transferIn.Date);
+        Assert.Equal(new DateOnly(2026, 3, 1), transferIn.Date);
     }
 
     [Fact]
@@ -220,14 +217,14 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using (var stream = File.OpenRead(SamplePath))
+        using (var stream = IbkrSampleFixture.OpenStream())
             await service.ImportAsync(stream);
 
         var securityTransactionCountAfterFirstImport = context.SecurityTransactions.Count();
         var cashTransactionCountAfterFirstImport = context.CashTransactions.Count();
         var accountCountAfterFirstImport = context.Accounts.Count();
 
-        using (var stream = File.OpenRead(SamplePath))
+        using (var stream = IbkrSampleFixture.OpenStream())
             await service.ImportAsync(stream);
 
         Assert.Equal(securityTransactionCountAfterFirstImport, context.SecurityTransactions.Count());
@@ -241,12 +238,12 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        // <Trade ... symbol="AVSG" ... listingExchange="LSEETF" .../>
-        var avsg = context.Securities.Single(s => s.Symbol == "AVSG");
-        Assert.Equal("LSEETF", avsg.Exchange);
+        // <Trade ... symbol="TSTA" ... listingExchange="LSEETF" .../>
+        var tsta = context.Securities.Single(s => s.Symbol == "TSTA");
+        Assert.Equal("LSEETF", tsta.Exchange);
     }
 
     [Fact]
@@ -254,21 +251,21 @@ public class IbkrImportServiceTests
     {
         using var context = CreateOpenInMemoryContext();
         // Simulates a Security imported before this feature existed: same Symbol +
-        // Currency as a real row in the sample export, but no Exchange recorded yet.
+        // Currency as a real row in the fixture, but no Exchange recorded yet.
         var securityRepository = new SecurityRepository(context);
         var preExisting = await securityRepository.AddAsync(
-            new Security { Symbol = "AVSG", Name = "AVSG", Currency = "GBP" });
+            new Security { Symbol = "TSTA", Name = "TSTA", Currency = "GBP" });
         Assert.Null(preExisting.Exchange);
 
         var service = CreateService(context);
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
         // Re-importing dedupes the transaction itself, but the existing Security row
         // must still get backfilled with the exchange the row reports.
-        var avsg = context.Securities.Single(s => s.Symbol == "AVSG");
-        Assert.Equal(preExisting.Id, avsg.Id);
-        Assert.Equal("LSEETF", avsg.Exchange);
+        var tsta = context.Securities.Single(s => s.Symbol == "TSTA");
+        Assert.Equal(preExisting.Id, tsta.Id);
+        Assert.Equal("LSEETF", tsta.Exchange);
     }
 
     [Fact]
@@ -277,15 +274,15 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var securityRepository = new SecurityRepository(context);
         var preExisting = await securityRepository.AddAsync(
-            new Security { Symbol = "AVSG", Name = "AVSG", Currency = "GBP", Exchange = "SOMEOTHERCODE" });
+            new Security { Symbol = "TSTA", Name = "TSTA", Currency = "GBP", Exchange = "SOMEOTHERCODE" });
 
         var service = CreateService(context);
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         await service.ImportAsync(stream);
 
-        var avsg = context.Securities.Single(s => s.Symbol == "AVSG");
-        Assert.Equal(preExisting.Id, avsg.Id);
-        Assert.Equal("SOMEOTHERCODE", avsg.Exchange);
+        var tsta = context.Securities.Single(s => s.Symbol == "TSTA");
+        Assert.Equal(preExisting.Id, tsta.Id);
+        Assert.Equal("SOMEOTHERCODE", tsta.Exchange);
     }
 
     [Fact]
@@ -294,11 +291,11 @@ public class IbkrImportServiceTests
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
 
-        using var stream = File.OpenRead(SamplePath);
+        using var stream = IbkrSampleFixture.OpenStream();
         var result = await service.ImportAsync(stream);
 
-        // EUR.GBP (x6), EUR.USD (x6), GBP.USD (x10) FX-conversion rows in the sample.
-        Assert.Equal(22, result.RecognizedButSkipped.Count);
+        // EUR.GBP (x2), EUR.USD (x2), GBP.USD (x2) FX-conversion rows in the fixture.
+        Assert.Equal(6, result.RecognizedButSkipped.Count);
         Assert.All(result.RecognizedButSkipped, s => Assert.Equal("Trade", s.ElementName));
         Assert.Empty(result.Unrecognized);
     }

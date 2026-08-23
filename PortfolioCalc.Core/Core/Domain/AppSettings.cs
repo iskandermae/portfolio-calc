@@ -9,4 +9,10 @@ public class AppSettings
 
     public int Id { get; set; } = SingletonId;
     public required string BaseCurrency { get; set; }
+
+    /// <summary>Base currency for the tax-estimation report (story 12) — a separate global
+    /// setting from <see cref="BaseCurrency"/>, since gross-gain figures don't need to share
+    /// the portfolio-value reports' currency. Defaults so existing call sites that only set
+    /// <see cref="BaseCurrency"/> keep compiling.</summary>
+    public string TaxBaseCurrency { get; set; } = TaxSupportedCurrencies.DefaultCode;
 }

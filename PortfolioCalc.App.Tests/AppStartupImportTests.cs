@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PortfolioCalc.App.Application.Import.Ibkr;
+using PortfolioCalc.App.Tests.Application.Import.Ibkr;
 using PortfolioCalc.Core.Data;
 using PortfolioCalc.Core.Data.Import.Ibkr;
 using PortfolioCalc.Core.Data.Repositories;
@@ -12,14 +13,12 @@ namespace PortfolioCalc.App.Tests;
 /// <summary>End-to-end test through the exact composition root the running app uses
 /// (see MauiProgram.CreateMauiApp) — real DI container, a real file-based SQLite
 /// database brought up via Database.Migrate() (not the in-memory/EnsureCreated shortcuts
-/// the other test classes use), and the real sample export. Exists because a bug can
+/// the other test classes use), and the synthetic sample export. Exists because a bug can
 /// live in the wiring itself (DI registrations, migrations, the exact DbContext options)
 /// rather than in any one class's logic — those are individually well-tested elsewhere,
 /// but never previously exercised together the way the app actually runs.</summary>
 public class AppStartupImportTests
 {
-    private static string SamplePath => Path.Combine(AppContext.BaseDirectory, "samples", "all-total-export-2026.xml");
-
     private static ServiceProvider BuildAppServices(string dbPath)
     {
         var services = new ServiceCollection();
@@ -53,7 +52,7 @@ public class AppStartupImportTests
             using (var scope = provider.CreateScope())
             {
                 var importService = scope.ServiceProvider.GetRequiredService<IbkrImportService>();
-                using var stream = File.OpenRead(SamplePath);
+                using var stream = IbkrSampleFixture.OpenStream();
 
                 var result = await importService.ImportAsync(stream);
 
@@ -87,7 +86,7 @@ public class AppStartupImportTests
             using (var scope = provider.CreateScope())
             {
                 var importService = scope.ServiceProvider.GetRequiredService<IbkrImportService>();
-                using var fileStream = File.OpenRead(SamplePath);
+                using var fileStream = IbkrSampleFixture.OpenStream();
                 using var stream = new NonSeekableStream(fileStream);
 
                 var result = await importService.ImportAsync(stream);

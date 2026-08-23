@@ -38,8 +38,4 @@
     </Compile>
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="..\import\samples\*.xml" Link="samples\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
 </Project>

@@ -12,7 +12,7 @@ Brokers (IBKR), mapping rows onto the local transaction model (story 01).
       duplicate transactions.
 - [x] Malformed/unrecognized rows are reported to the user rather than silently skipped
       or crashing the import.
-- [x] Integration tests parse at least one real (anonymized) sample export file.
+- [x] Integration tests parse a sample export file (a fully synthetic fixture, not real data).
 
 ## Technical Notes
 - Parser lives in `Data/` behind an `Core`-defined import interface (e.g.
@@ -21,9 +21,8 @@ Brokers (IBKR), mapping rows onto the local transaction model (story 01).
 - Get a real sample export before finalizing the parser — see open question below.
 
 ## Implementation Notes (as built)
-Resolved with the user against a real anonymized sample
-(`import/samples/all-total-export-2026.xml`) — see `doc/decisions.md` for the full
-rationale of each call below:
+Initially built and validated against the IBKR export sample. See `doc/decisions.md`
+for the full rationale of each call below:
 - **Format**: IBKR Flex Query XML specifically (not Activity Statement CSV).
 - `ITransactionImporter` (Data/`IbkrFlexQueryImporter`) parses XML into raw attribute
   rows only (`IbkrRawRow`/`IbkrFlexQueryImportData` in `Core/Import/`); all mapping logic

@@ -15,6 +15,17 @@
     </select>
 </div>
 
+<div class="mb-3">
+    <label for="taxBaseCurrency" class="form-label">Tax base currency</label>
+    <select id="taxBaseCurrency" class="form-select" style="max-width: 12rem" @bind="_taxBaseCurrency" @bind:after="OnTaxBaseCurrencyChanged">
+        @foreach (var currency in TaxSupportedCurrencies.Codes)
+        {
+            <option value="@currency">@currency</option>
+        }
+    </select>
+    <div class="form-text">Used by the tax-estimation report — separate from the base currency above.</div>
+</div>
+
 @if (_saved)
 {
     <p><em>Saved.</em></p>
@@ -22,18 +33,28 @@
 
 @code {
     private string _baseCurrency = SupportedCurrencies.Codes[0];
+    private string _taxBaseCurrency = TaxSupportedCurrencies.DefaultCode;
     private bool _saved;
 
     protected override async Task OnInitializedAsync()
     {
         var settings = await SettingsRepository.GetAsync();
         if (settings is not null)
+        {
             _baseCurrency = settings.BaseCurrency;
+            _taxBaseCurrency = settings.TaxBaseCurrency;
+        }
     }
 
     private async Task OnBaseCurrencyChanged()
     {
-        await SettingsRepository.SaveAsync(new AppSettings { BaseCurrency = _baseCurrency });
+        await SettingsRepository.SaveAsync(new AppSettings { BaseCurrency = _baseCurrency, TaxBaseCurrency = _taxBaseCurrency });
+        _saved = true;
+    }
+
+    private async Task OnTaxBaseCurrencyChanged()
+    {
+        await SettingsRepository.SaveAsync(new AppSettings { BaseCurrency = _baseCurrency, TaxBaseCurrency = _taxBaseCurrency });
         _saved = true;
     }
 }

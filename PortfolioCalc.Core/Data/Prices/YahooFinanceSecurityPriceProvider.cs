@@ -9,7 +9,7 @@ namespace PortfolioCalc.Core.Data.Prices;
 /// <summary>Fetches security prices from Yahoo Finance's public (undocumented, no-API-key)
 /// "chart" endpoint — the same one <c>yfinance</c> (github.com/ranaroussi/yfinance) wraps.
 /// Passes this app's <c>Security.Symbol</c> straight through as the Yahoo ticker, optionally
-/// appending a Yahoo exchange suffix (e.g. "AVSG" + ".L") looked up from the caller-supplied
+/// appending a Yahoo exchange suffix (e.g. "CSPX" + ".L") looked up from the caller-supplied
 /// <c>exchange</c> code via the "ExchangeYahooSuffix" <see cref="VocabularyEntry"/> table —
 /// a user-editable lookup rather than a hard-coded mapping, so new exchanges/suffixes don't
 /// need a code change. No exchange code, or one with no vocabulary entry, falls back to the

@@ -20,6 +20,7 @@ public class AppSettingsRepository(PortfolioDbContext context) : IAppSettingsRep
         else
         {
             existing.BaseCurrency = settings.BaseCurrency;
+            existing.TaxBaseCurrency = settings.TaxBaseCurrency;
         }
 
         await context.SaveChangesAsync();
