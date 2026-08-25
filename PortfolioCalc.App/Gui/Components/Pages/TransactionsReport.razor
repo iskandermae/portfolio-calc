@@ -7,6 +7,7 @@
 @inject ISecurityTransactionRepository SecurityTransactionRepository
 @inject ICashTransactionRepository CashTransactionRepository
 @inject IUiLayoutSettingRepository LayoutRepository
+@inject TransactionDeleteService TransactionDeleteService
 @inject TransactionPerformanceService TransactionPerformanceService
 @inject BaseCurrencyConversionService BaseCurrencyConversionService
 @inject ILogger<TransactionsReport> Logger
@@ -87,10 +88,13 @@ else
                         <td class="text-end">@(performance?.CashFlowResult is { } cashFlow ? cashFlow.ToString("N2") : "")</td>
                     }
                     <td>
-                        @if (row.SecurityId is not null)
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => GoToChart(row)">Chart</button>
-                        }
+                        <div class="btn-group btn-group-sm" role="group">
+                            @if (row.SecurityId is not null)
+                            {
+                                <button class="btn btn-outline-secondary" @onclick="() => GoToChart(row)">Chart</button>
+                            }
+                            <button class="btn btn-outline-danger" @onclick="() => DeleteRowAsync(row)">Delete</button>
+                        </div>
                     </td>
                 </tr>
             }
@@ -104,7 +108,7 @@ else
     private record TransactionRow(
         DateOnly Date, string Kind, TransactionCategory Category, string Account, string? Security,
         decimal? Quantity, decimal Amount, string Currency, decimal? Fee, string? Note, int? SecurityId,
-        int? TransactionId);
+        int? TransactionId, int? CashTransactionId);
 
     private class ColumnState
     {
@@ -225,12 +229,12 @@ else
             .Select(t => new TransactionRow(
                 t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
                 t.Position!.Account!.Name, t.Position.Security!.Symbol,
-                t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note, t.Position.Security.Id, t.Id))
+                t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note, t.Position.Security.Id, t.Id, null))
             .Concat(cashTransactions
                 .Select(t => new TransactionRow(
                     t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
                     t.Account!.Name, null,
-                    null, t.Amount, t.Currency, t.FeeAmount, t.Note, null, null)))
+                    null, t.Amount, t.Currency, t.FeeAmount, t.Note, null, null, t.Id)))
             .ToList();
 
         _rows = rows;
@@ -353,6 +357,26 @@ else
         var shares = row.Quantity ?? 1m;
         NavigationManager.NavigateTo(
             $"position-chart?securityId={row.SecurityId}&startDate={row.Date:yyyy-MM-dd}&shares={shares}");
+    }
+
+    private async Task DeleteRowAsync(TransactionRow row)
+    {
+        try
+        {
+            if (row.TransactionId is not null)
+                await TransactionDeleteService.DeleteSecurityTransactionAsync(row.TransactionId.Value);
+            else if (row.CashTransactionId is not null)
+                await TransactionDeleteService.DeleteCashTransactionAsync(row.CashTransactionId.Value);
+
+            await LoadRowsAsync();
+            if (_showAnalytics)
+                await LoadPerformanceAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to delete a transaction from the transactions report.");
+            _error = "Could not delete the transaction. See the Logs page for details.";
+        }
     }
 
     /// <summary>No decimal places for a whole number (e.g. "143"), exactly 2 otherwise

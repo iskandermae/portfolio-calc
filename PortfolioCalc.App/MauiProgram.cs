@@ -87,6 +87,7 @@ public static class MauiProgram
 		builder.Services.AddScoped<InflationRateService>();
 		builder.Services.AddScoped<PositionPerformanceService>();
 		builder.Services.AddScoped<TransactionPerformanceService>();
+		builder.Services.AddScoped<TransactionDeleteService>();
 		builder.Services.AddScoped<TaxEstimationService>();
 		builder.Services.AddScoped<PortfolioCalc.App.Gui.State.TaxEstimationPageState>();
 
