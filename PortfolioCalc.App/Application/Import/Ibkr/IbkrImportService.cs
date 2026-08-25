@@ -15,6 +15,7 @@ public class IbkrImportService(
     ITransactionImporter importer,
     IAccountRepository accountRepository,
     ISecurityRepository securityRepository,
+    IVocabularyRepository vocabularyRepository,
     IPositionRepository positionRepository,
     ICashTransactionRepository cashTransactionRepository,
     ISecurityTransactionRepository securityTransactionRepository)
@@ -24,17 +25,18 @@ public class IbkrImportService(
         var data = await importer.ParseAsync(xmlStream);
         var result = new ImportResult();
         var account = await ResolveAccountAsync(data);
+        var exchangeSuffixes = await GetExchangeSuffixesAsync();
 
         foreach (var row in data.Trades)
-            await ProcessTradeAsync(row, account, result);
+            await ProcessTradeAsync(row, account, result, exchangeSuffixes);
 
         foreach (var row in data.CashTransactions)
-            await ProcessCashTransactionAsync(row, account, result);
+            await ProcessCashTransactionAsync(row, account, result, exchangeSuffixes);
 
-        await ProcessDividendsAsync(data, account, result);
+        await ProcessDividendsAsync(data, account, result, exchangeSuffixes);
 
         foreach (var row in data.Transfers)
-            await ProcessTransferAsync(row, account, result);
+            await ProcessTransferAsync(row, account, result, exchangeSuffixes);
 
         foreach (var row in data.UnhandledSectionRows)
             result.Unrecognized.Add(new SkippedRow(row.ElementName,
@@ -47,7 +49,11 @@ public class IbkrImportService(
     /// <summary>Groups dividend/payment-in-lieu/withholding-tax cash rows by
     /// (Security, Date) and emits one Dividend (or, if there's tax with no matching
     /// dividend, one Tax) SecurityTransaction per group. See doc/decisions.md.</summary>
-    private async Task ProcessDividendsAsync(IbkrFlexQueryImportData data, Account account, ImportResult result)
+    private async Task ProcessDividendsAsync(
+        IbkrFlexQueryImportData data,
+        Account account,
+        ImportResult result,
+        IReadOnlyCollection<string> exchangeSuffixes)
     {
         var groups = data.CashTransactions
             .Where(r => DividendGroupTypes.Contains(r.Get("type") ?? ""))
@@ -70,7 +76,8 @@ public class IbkrImportService(
             // non-empty listingExchange seen among them is authoritative (see
             // ResolveSecurityAsync).
             var exchange = rows.Select(r => r.Get("listingExchange")).FirstOrDefault(e => !string.IsNullOrEmpty(e));
-            var security = await ResolveSecurityAsync(group.Key.SecuritySymbol, group.Key.Currency, exchange);
+            var securitySymbolWithoutExchange = NormalizeSecuritySymbol(group.Key.SecuritySymbol, exchangeSuffixes);
+            var security = await ResolveSecurityAsync(securitySymbolWithoutExchange, group.Key.Currency, exchange);
             var position = await ResolvePositionAsync(account, security);
 
             if (grossDividend != 0)
@@ -90,7 +97,7 @@ public class IbkrImportService(
                     TaxAmount = taxSigned != 0 ? taxSigned : null,
                 };
                 await securityTransactionRepository.AddAsync(transaction);
-                result.Imported.Add($"Dividend {grossDividend} {group.Key.Currency} ({group.Key.SecuritySymbol}) on {group.Key.Date:yyyy-MM-dd}");
+                result.Imported.Add($"Dividend {grossDividend} {group.Key.Currency} ({group.Key.SecuritySymbol} as {securitySymbolWithoutExchange}) on {group.Key.Date:yyyy-MM-dd}");
             }
             else if (taxSigned != 0)
             {
@@ -122,13 +129,17 @@ public class IbkrImportService(
             ?? await accountRepository.AddAsync(new Account { Name = name });
     }
 
-    private async Task ProcessTradeAsync(IbkrRawRow row, Account account, ImportResult result)
+    private async Task ProcessTradeAsync(
+        IbkrRawRow row,
+        Account account,
+        ImportResult result,
+        IReadOnlyCollection<string> exchangeSuffixes)
     {
         var transactionType = row.Get("transactionType") ?? "";
         var securityId = row.Get("securityID") ?? "";
-        var securitySymbol = row.Get("symbol") ?? "";
+        var securitySymbolFull = row.Get("symbol") ?? "";
 
-        if (string.IsNullOrEmpty(securityId) && CurrencyPairSymbol.IsMatch(securitySymbol))
+        if (string.IsNullOrEmpty(securityId) && CurrencyPairSymbol.IsMatch(securitySymbolFull))
         {
             result.RecognizedButSkipped.Add(new SkippedRow(row.ElementName,
                 "IBKR currency-conversion trade, not a security trade.", row.Attributes));
@@ -157,8 +168,8 @@ public class IbkrImportService(
                 $"Unrecognized buySell value '{buySell}'.", row.Attributes));
             return;
         }
-
-        var security = await ResolveSecurityAsync(securitySymbol, currency, row.Get("listingExchange"));
+        var securitySymbolWithoutExchange = NormalizeSecuritySymbol(securitySymbolFull, exchangeSuffixes);
+        var security = await ResolveSecurityAsync(securitySymbolWithoutExchange, currency, row.Get("listingExchange"));
         var position = await ResolvePositionAsync(account, security);
 
         var quantity = Math.Abs(ParseDecimal(row.Get("quantity")));
@@ -186,10 +197,14 @@ public class IbkrImportService(
             FeeCurrency = commission != 0 ? commissionCurrency : null,
         };
         await securityTransactionRepository.AddAsync(transaction);
-        result.Imported.Add($"{type.Value} {quantity} {securitySymbol} ({currency}) @ {price} on {date:yyyy-MM-dd}");
+        result.Imported.Add($"{type.Value} {quantity} {securitySymbolFull} (as {securitySymbolWithoutExchange}) ({currency}) @ {price} on {date:yyyy-MM-dd}");
     }
 
-    private async Task ProcessCashTransactionAsync(IbkrRawRow row, Account account, ImportResult result)
+    private async Task ProcessCashTransactionAsync(
+        IbkrRawRow row,
+        Account account,
+        ImportResult result,
+        IReadOnlyCollection<string> exchangeSuffixes)
     {
         var type = row.Get("type") ?? "";
         var currency = row.Get("currency") ?? "";
@@ -244,7 +259,11 @@ public class IbkrImportService(
         }
     }
 
-    private async Task ProcessTransferAsync(IbkrRawRow row, Account account, ImportResult result)
+    private async Task ProcessTransferAsync(
+        IbkrRawRow row,
+        Account account,
+        ImportResult result,
+        IReadOnlyCollection<string> exchangeSuffixes)
     {
         var transferType = row.Get("type") ?? "";
         var direction = row.Get("direction") ?? "";
@@ -263,7 +282,8 @@ public class IbkrImportService(
         var quantity = Math.Abs(ParseDecimal(row.Get("quantity")));
         var date = ParseDate(row.Get("dateTime"));
 
-        var security = await ResolveSecurityAsync(securitySymbol, currency, row.Get("listingExchange"));
+        var securitySymbolWithoutExchange = NormalizeSecuritySymbol(securitySymbol, exchangeSuffixes);
+        var security = await ResolveSecurityAsync(securitySymbolWithoutExchange, currency, row.Get("listingExchange"));
         var position = await ResolvePositionAsync(account, security);
 
         // TransferIn always has Amount = 0, so the dedup key (Position/Amount/Date/
@@ -282,7 +302,7 @@ public class IbkrImportService(
             Currency = currency,
         };
         await securityTransactionRepository.AddAsync(transaction);
-        result.Imported.Add($"TransferIn {quantity} {securitySymbol} ({currency}) on {date:yyyy-MM-dd}");
+        result.Imported.Add($"TransferIn {quantity} {securitySymbol} (as {securitySymbolWithoutExchange}) ({currency}) on {date:yyyy-MM-dd}");
     }
 
     /// <summary>Dedup key: Account + Security + Amount + Date + Currency, applied to the
@@ -332,6 +352,33 @@ public class IbkrImportService(
     private async Task<Position> ResolvePositionAsync(Account account, Security security) =>
         await positionRepository.GetByAccountAndSecurityAsync(account.Id, security.Id)
         ?? await positionRepository.AddAsync(new Position { AccountId = account.Id, SecurityId = security.Id });
+
+    private async Task<IReadOnlyCollection<string>> GetExchangeSuffixesAsync()
+    {
+        var entries = await vocabularyRepository.GetByTypeAsync(VocabularyTypes.ExchangeYahooSuffix);
+        return entries
+            .Select(entry => entry.Value)
+            .Where(value => !string.IsNullOrEmpty(value))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string NormalizeSecuritySymbol(string securitySymbol, IReadOnlyCollection<string> exchangeSuffixes)
+    {
+        if (string.IsNullOrEmpty(securitySymbol))
+            return securitySymbol;
+
+        if (!securitySymbol.Contains('.'))
+            return securitySymbol;
+
+        foreach (var suffix in exchangeSuffixes)
+        {
+            if (securitySymbol.EndsWith(suffix, StringComparison.Ordinal) && securitySymbol.Length > suffix.Length)
+                return securitySymbol[..^suffix.Length];
+        }
+
+        return securitySymbol;
+    }
 
     private static decimal ParseDecimal(string? value) =>
         decimal.Parse(value ?? "0", CultureInfo.InvariantCulture);
