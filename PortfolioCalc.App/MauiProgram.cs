@@ -30,6 +30,7 @@ public static class MauiProgram
 	/// database left behind by a schema change with no corresponding migration, without
 	/// requiring the user to go find and delete the file by hand.</summary>
 	private const string ResetDbArgument = "--reset-db";
+	private const string MaintenanceArgument = "--maintenance";
 
 	public static MauiApp CreateMauiApp()
 	{
@@ -41,7 +42,8 @@ public static class MauiProgram
 
 		Directory.CreateDirectory(PortfolioDbContext.DefaultDataDirectory);
 
-		if (Environment.GetCommandLineArgs().Contains(ResetDbArgument, StringComparer.OrdinalIgnoreCase))
+		var args = Environment.GetCommandLineArgs();
+		if (args.Contains(ResetDbArgument, StringComparer.OrdinalIgnoreCase))
 			DeleteDatabaseFiles();
 
 		builder.Services.AddDbContext<PortfolioDbContext>(options =>
@@ -110,7 +112,9 @@ public static class MauiProgram
 
 		using (var scope = app.Services.CreateScope())
 		{
-			scope.ServiceProvider.GetRequiredService<PortfolioDbContext>().Database.Migrate();
+			var dbContext = scope.ServiceProvider.GetRequiredService<PortfolioDbContext>();
+			dbContext.Database.Migrate();
+			MaintenanceHook(args, dbContext, scope.ServiceProvider.GetRequiredService<ILoggerFactory>());
 		}
 
 		// Belt-and-suspenders: a page-render exception is caught and logged by
@@ -139,5 +143,21 @@ public static class MauiProgram
 			if (File.Exists(path))
 				File.Delete(path);
 		}
+	}
+
+	private static void MaintenanceHook(string[] args, PortfolioDbContext dbContext, ILoggerFactory loggerFactory)
+	{
+		if (!args.Contains(MaintenanceArgument, StringComparer.OrdinalIgnoreCase))
+			return;
+
+		var logger = loggerFactory.CreateLogger("MaintenanceHook");
+
+		logger.LogInformation("Do updates in the DB.");
+
+		using var transaction = dbContext.Database.BeginTransaction();
+		//dbContext.Database.ExecuteSqlRaw("DELETE FROM \"SecurityTransactions\"");
+		transaction.Commit();
+
+		logger.LogInformation("Done.");
 	}
 }

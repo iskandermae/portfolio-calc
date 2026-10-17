@@ -120,13 +120,8 @@ public class IbkrImportService(
 
     private async Task<Account> ResolveAccountAsync(IbkrFlexQueryImportData data)
     {
-        var alias = data.Trades.Concat(data.CashTransactions).Concat(data.Transfers)
-            .Select(r => r.Get("acctAlias"))
-            .FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
-        var name = !string.IsNullOrWhiteSpace(alias) ? alias! : data.StatementAccountId;
-
-        return await accountRepository.GetByNameAsync(name)
-            ?? await accountRepository.AddAsync(new Account { Name = name });
+        return await accountRepository.GetByNameAsync(data.StatementAccountId)
+            ?? await accountRepository.AddAsync(new Account { Name = data.StatementAccountId });
     }
 
     private async Task ProcessTradeAsync(

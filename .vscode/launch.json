@@ -12,7 +12,10 @@
             "program": "${workspaceFolder}\\PortfolioCalc.App\\bin\\Debug\\net10.0-windows10.0.19041.0\\win-x64\\PortfolioCalc.App.exe",
             "cwd": "${workspaceFolder}\\PortfolioCalc.App",
             "console": "internalConsole",
-            "stopAtEntry": false
+            "stopAtEntry": false,
+            "args": [
+                "--placeholder-to-debug-with-argument"
+            ]
         }
     ]
 }
