@@ -11,10 +11,5 @@ public interface ISecurityRepository
     /// <see cref="Security"/>.</summary>
     Task<Security?> GetBySymbolAndCurrencyAsync(string symbol, string currency);
 
-    /// <summary>Persists changes to an already-tracked-or-reloaded Security (e.g.
-    /// backfilling <see cref="Security.Exchange"/> on a pre-existing row — see
-    /// doc/decisions.md).</summary>
-    Task UpdateAsync(Security security);
-
     Task DeleteAsync(int id);
 }

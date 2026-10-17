@@ -93,10 +93,19 @@ else
                             {
                                 <button class="btn btn-outline-secondary" @onclick="() => GoToChart(row)">Chart</button>
                             }
+                            <button class="btn btn-outline-secondary" @onclick="() => ToggleDetails(row)">Details</button>
                             <button class="btn btn-outline-danger" @onclick="() => DeleteRowAsync(row)">Delete</button>
                         </div>
                     </td>
                 </tr>
+                @if (_expandedRowKeys.Contains(row.Key))
+                {
+                    <tr>
+                        <td colspan="@(_columns.Count(c => c.Visible) + (_showAnalytics ? 3 : 1))">
+                            <textarea class="form-control font-monospace" readonly rows="@DetailsLineCount(row)">@row.Details</textarea>
+                        </td>
+                    </tr>
+                }
             }
         </tbody>
     </table>
@@ -108,7 +117,10 @@ else
     private record TransactionRow(
         DateOnly Date, string Kind, TransactionCategory Category, string Account, string? Security,
         decimal? Quantity, decimal Amount, string Currency, decimal? Fee, string? Note, int? SecurityId,
-        int? TransactionId, int? CashTransactionId);
+        int? TransactionId, int? CashTransactionId, string Details)
+    {
+        public string Key => TransactionId is not null ? $"S{TransactionId}" : $"C{CashTransactionId}";
+    }
 
     private class ColumnState
     {
@@ -159,6 +171,7 @@ else
     private string _baseCurrency = "";
     private Dictionary<int, SecurityTransaction> _buyTransactionsById = [];
     private Dictionary<int, BuyTransactionPerformance> _performanceByTransactionId = [];
+    private HashSet<string> _expandedRowKeys = [];
     private string? _error;
 
     protected override async Task OnInitializedAsync()
@@ -229,12 +242,14 @@ else
             .Select(t => new TransactionRow(
                 t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
                 t.Position!.Account!.Name, t.Position.Security!.Symbol,
-                t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note, t.Position.Security.Id, t.Id, null))
+                t.Quantity, t.Amount, t.Currency, t.FeeAmount, t.Note, t.Position.Security.Id, t.Id, null,
+                TransactionDetailsFormatter.Format(t)))
             .Concat(cashTransactions
                 .Select(t => new TransactionRow(
                     t.Date, t.Type.ToString(), TransactionCategoryClassifier.Classify(t.Type),
                     t.Account!.Name, null,
-                    null, t.Amount, t.Currency, t.FeeAmount, t.Note, null, null, t.Id)))
+                    null, t.Amount, t.Currency, t.FeeAmount, t.Note, null, null, t.Id,
+                    TransactionDetailsFormatter.Format(t))))
             .ToList();
 
         _rows = rows;
@@ -357,6 +372,14 @@ else
         var shares = row.Quantity ?? 1m;
         NavigationManager.NavigateTo(
             $"position-chart?securityId={row.SecurityId}&startDate={row.Date:yyyy-MM-dd}&shares={shares}");
+    }
+
+    private static int DetailsLineCount(TransactionRow row) => row.Details.Count(c => c == (char)10) + 1;
+
+    private void ToggleDetails(TransactionRow row)
+    {
+        if (!_expandedRowKeys.Remove(row.Key))
+            _expandedRowKeys.Add(row.Key);
     }
 
     private async Task DeleteRowAsync(TransactionRow row)

@@ -28,7 +28,11 @@ for the full rationale of each call below:
   rows only (`IbkrRawRow`/`IbkrFlexQueryImportData` in `Core/Import/`); all mapping logic
   (account/security resolution, dividend aggregation, dedup, FX-skip recognition) lives
   in `App/Application/Import/IbkrImportService`, returning an `ImportResult`
-  (imported/recognized-but-skipped/unrecognized).
+  (imported/recognized-but-skipped/unrecognized). **Update (story 14):** renamed to
+  `IIbkrTransactionImporter` and moved into `Core/Import/Ibkr/` alongside
+  `IbkrFlexQueryImportData` — it was never actually broker-agnostic (it's typed to return
+  `IbkrFlexQueryImportData`), so Trading 212 got its own `IT212TransactionImporter`
+  instead of reusing this one; see doc/decisions.md.
 - `Security` is keyed by `Symbol` + `Currency`. ISIN is deliberately not imported or
   stored for now.
 - New enum values: `SecurityTransactionType.Tax`, `SecurityTransactionType.TransferIn`,

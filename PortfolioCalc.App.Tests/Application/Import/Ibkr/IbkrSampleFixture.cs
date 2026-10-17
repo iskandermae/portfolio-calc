@@ -11,7 +11,7 @@ namespace PortfolioCalc.App.Tests.Application.Import.Ibkr;
 /// with no dividend in its group, and an in-kind transfer-in.</summary>
 internal static class IbkrSampleFixture
 {
-    public const string AccountAlias = "test_account";
+    public const string StatementAccountId = "TESTACCT001";
 
     public const string Xml = """
         <?xml version="1.0" encoding="UTF-8"?>

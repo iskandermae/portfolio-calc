@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using PortfolioCalc.App.Application.Fx;
 using PortfolioCalc.App.Application.Prices;
 using PortfolioCalc.Core.Domain;
@@ -15,7 +16,8 @@ namespace PortfolioCalc.App.Application.Positions;
 public class PositionValuationService(
     ISecurityTransactionRepository transactionRepository,
     SecurityPriceService priceService,
-    BaseCurrencyConversionService baseCurrencyConversionService)
+    BaseCurrencyConversionService baseCurrencyConversionService,
+    ILogger<PositionValuationService> logger)
 {
     /// <summary>Number of trailing calendar days tried, starting at the requested date and
     /// walking backwards, when looking for the latest available price/FX rate. Prices and FX
@@ -74,6 +76,22 @@ public class PositionValuationService(
                     valueInBaseCurrency = conversion.Rate;
                     resolved = true;
                 }
+                else
+                {
+                    logger.LogWarning(
+                        "Position {Symbol} ({Currency}) in account {Account} is unresolved: could not convert to " +
+                        "{BaseCurrency} on {Date} (FX status {Status}). Reason: {Reason}",
+                        security.Symbol, security.Currency, held.Position.Account!.Name,
+                        baseCurrency, asOf, conversion.Status, conversion.ErrorMessage);
+                }
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Position {Symbol} ({Currency}) in account {Account} is unresolved: no price found on or within " +
+                    "{LookbackDays} days before {Date} (price status {Status}). Reason: {Reason}",
+                    security.Symbol, security.Currency, held.Position.Account!.Name,
+                    AsOfLookbackDays, asOf, priceResult.Status, priceResult.ErrorMessage);
             }
 
             if (resolved)

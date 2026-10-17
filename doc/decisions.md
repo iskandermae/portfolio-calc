@@ -17,7 +17,9 @@ remove/update an entry once it's superseded rather than layering a correction on
 - Import target is IBKR Flex Query XML, not Activity Statement CSV — a stable flat schema.
 - `Security` is keyed by `Symbol` + `Currency`, not ISIN — the same symbol can be dual-listed
   in different currencies.
-- Account is resolved/auto-created from the export's alias, falling back to the raw account id.
+- Account is resolved/auto-created from the export's `FlexStatement.accountId` only — not
+  the per-row `acctAlias` (changed after existing accounts were renamed to match
+  `accountId` directly; avoids the alias and the id resolving to two different accounts).
 - Sign convention: incoming/profit amounts positive, outgoing/cost amounts negative — lets
   amounts sum directly; the importer preserves the broker's own sign rather than normalizing it.
 - `SecurityTransaction.TaxAmount` is separate from `FeeAmount` — withholding tax and broker
@@ -50,7 +52,7 @@ remove/update an entry once it's superseded rather than layering a correction on
 - `FxRateResult`/`PriceResult`/`InflationRateResult` carry a status enum instead of
   throwing/nullable — a network failure and an unsupported currency/security need different
   caller reactions.
-- `ITransactionImporter` parses via async `XmlReader`/`XDocument.LoadAsync`, never
+- `IIbkrTransactionImporter` parses via async `XmlReader`/`XDocument.LoadAsync`, never
   `XDocument.Load(Stream)` — the Blazor `InputFile` stream doesn't support synchronous reads.
 - `FxRate`/`SecurityPrice` are separate tables (different keys) but share the same
   check-store→fetch→store caching shape as parallel implementations, not a generic base.
@@ -84,8 +86,8 @@ remove/update an entry once it's superseded rather than layering a correction on
   fully-sold position (qty 0) is dropped. "Current" price/FX resolves via a 7-day backward
   lookback (first success) — duplicated in `PositionValueChartService` rather than extracted
   (two call sites don't justify a shared abstraction).
-- `Security.Exchange` stores the broker's raw listing-exchange code, backfilled on first
-  non-empty observation and never overwritten after.
+- `Security.Exchange` stores the broker's raw listing-exchange code, set only when the
+  Security is first created by an import and never updated after.
 - A generic `VocabularyEntry` table (Type+Key+Value+Description) backs exchange→Yahoo-suffix
   and other lookups, user-editable via a Gui CRUD page instead of hard-coded mappings; a
   missing key and an empty value are distinct "no data" outcomes.
@@ -162,3 +164,29 @@ remove/update an entry once it's superseded rather than layering a correction on
   missing settings row) as "unset" and logs a warning before defaulting — the migration that
   added the column backfilled existing rows with `""`, not a real default, so an
   already-existing installation silently got an empty FX "to" currency without this check.
+- A second broker (Trading 212, story 14) got its own importer/service pair under a parallel
+  `T212/` subfolder per layer, rather than generalizing the IBKR importer interface — it's
+  typed to return `IbkrFlexQueryImportData`, so it was never actually broker-agnostic
+  despite story 02's note; forcing a shared abstraction wasn't worth it for two brokers with
+  unrelated raw-row shapes (XML attributes vs. a flat CSV row). Renamed
+  `ITransactionImporter` → `IIbkrTransactionImporter` and moved it into `Core/Import/Ibkr/`
+  (next to `IbkrFlexQueryImportData`) to make that non-generality explicit, mirroring
+  `IT212TransactionImporter`'s own location under `Core/Import/T212/`.
+- T212's CSV reports `Total`/`Result`/its conversion fee in the account's own currency
+  regardless of the security's trading currency (unlike IBKR, which reports per-security).
+  The importer computes `SecurityTransaction.Amount`/`Currency` from shares × price in the
+  trading currency instead of reading `Total`, so a T212-imported security stays keyed the
+  same way (`Symbol` + trading currency) as the same security imported from IBKR.
+- T212's `GBX` (pence) currency code is normalized to `GBP` (price ÷ 100) before computing
+  Amount — the same pence/pounds split already handled for Yahoo's `GBp` quotes.
+- T212's CSV carries no account identity at all (unlike IBKR's `FlexStatement.accountId`) —
+  the GUI resolves/creates the target `Account` via a picker before calling the import
+  service, rather than the importer/service resolving it from file content.
+- T212 puts a dividend's gross amount and its withholding tax on the same row, so (unlike
+  IBKR) no cross-row aggregation pass is needed to produce one Dividend transaction.
+- T212's CSV has no listing exchange, so GBP-traded T212 securities get the placeholder
+  exchange `MY_T212.L` (new securities only; existing ones are never updated); the user maps it to `.L` in the
+  `ExchangeYahooSuffix` vocabulary. Other currencies get none. A heuristic by design — wrong
+  for a GBP-denominated security that isn't London-listed, fixable by editing its exchange.
+- The Transactions page's "Details" memo shows currencies as plain codes: there is no currency
+  entity/name table (see `SupportedCurrencies`), and none was added for display.

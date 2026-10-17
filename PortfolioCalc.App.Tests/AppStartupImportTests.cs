@@ -1,11 +1,16 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PortfolioCalc.App.Application.Import.Ibkr;
+using PortfolioCalc.App.Application.Import.T212;
 using PortfolioCalc.App.Tests.Application.Import.Ibkr;
+using PortfolioCalc.App.Tests.Application.Import.T212;
 using PortfolioCalc.Core.Data;
 using PortfolioCalc.Core.Data.Import.Ibkr;
+using PortfolioCalc.Core.Data.Import.T212;
 using PortfolioCalc.Core.Data.Repositories;
-using PortfolioCalc.Core.Import;
+using PortfolioCalc.Core.Domain;
+using PortfolioCalc.Core.Import.Ibkr;
+using PortfolioCalc.Core.Import.T212;
 using PortfolioCalc.Core.Repositories;
 
 namespace PortfolioCalc.App.Tests;
@@ -28,11 +33,14 @@ public class AppStartupImportTests
 
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<ISecurityRepository, SecurityRepository>();
+        services.AddScoped<IVocabularyRepository, VocabularyRepository>();
         services.AddScoped<IPositionRepository, PositionRepository>();
         services.AddScoped<ICashTransactionRepository, CashTransactionRepository>();
         services.AddScoped<ISecurityTransactionRepository, SecurityTransactionRepository>();
-        services.AddScoped<ITransactionImporter, IbkrFlexQueryImporter>();
+        services.AddScoped<IIbkrTransactionImporter, IbkrFlexQueryImporter>();
         services.AddScoped<IbkrImportService>();
+        services.AddScoped<IT212TransactionImporter, T212CsvImporter>();
+        services.AddScoped<T212ImportService>();
 
         return services.BuildServiceProvider();
     }
@@ -93,6 +101,39 @@ public class AppStartupImportTests
 
                 Assert.True(result.ImportedCount > 0);
                 Assert.Empty(result.Unrecognized);
+            }
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task Importing_the_t212_sample_export_through_the_real_app_wiring_succeeds()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"portfoliocalc-t212-startup-{Guid.NewGuid()}.sqlite");
+        try
+        {
+            using var provider = BuildAppServices(dbPath);
+
+            using (var scope = provider.CreateScope())
+                scope.ServiceProvider.GetRequiredService<PortfolioDbContext>().Database.Migrate();
+
+            using (var scope = provider.CreateScope())
+            {
+                var accountRepository = scope.ServiceProvider.GetRequiredService<IAccountRepository>();
+                var account = await accountRepository.AddAsync(new Account { Name = "test_account" });
+
+                var importService = scope.ServiceProvider.GetRequiredService<T212ImportService>();
+                using var stream = T212SampleFixture.OpenStream();
+
+                var result = await importService.ImportAsync(stream, account.Id);
+
+                Assert.True(result.ImportedCount > 0);
+                // The fixture includes one row (Withdrawal) this slice doesn't handle.
+                Assert.Single(result.Unrecognized);
             }
         }
         finally

@@ -46,19 +46,4 @@ public class SecurityRepositoryTests
         Assert.NotNull(reloaded);
         Assert.Null(reloaded!.Exchange);
     }
-
-    [Fact]
-    public async Task UpdateAsync_backfills_the_exchange_on_a_pre_existing_security()
-    {
-        using var context = CreateOpenInMemoryContext();
-        var repository = new SecurityRepository(context);
-
-        // Simulates a Security imported before Exchange existed.
-        var security = await repository.AddAsync(new Security { Symbol = "AVSG", Name = "AVSG", Currency = "GBP" });
-        security.Exchange = "LSEETF";
-        await repository.UpdateAsync(security);
-
-        var reloaded = await repository.GetByIdAsync(security.Id);
-        Assert.Equal("LSEETF", reloaded!.Exchange);
-    }
 }

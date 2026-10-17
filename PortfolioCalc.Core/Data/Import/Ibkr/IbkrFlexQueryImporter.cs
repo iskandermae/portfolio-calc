@@ -1,6 +1,5 @@
 using System.Xml;
 using System.Xml.Linq;
-using PortfolioCalc.Core.Import;
 using PortfolioCalc.Core.Import.Ibkr;
 
 namespace PortfolioCalc.Core.Data.Import.Ibkr;
@@ -8,7 +7,7 @@ namespace PortfolioCalc.Core.Data.Import.Ibkr;
 /// <summary>Parses an IBKR Flex Query XML export into raw rows. Only the first
 /// FlexStatement in the file is read (a file with more than one is not supported yet —
 /// no real case for it has come up).</summary>
-public class IbkrFlexQueryImporter : ITransactionImporter
+public class IbkrFlexQueryImporter : IIbkrTransactionImporter
 {
     public async Task<IbkrFlexQueryImportData> ParseAsync(Stream xmlStream, CancellationToken cancellationToken = default)
     {

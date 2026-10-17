@@ -16,6 +16,9 @@ public class AccountRepository(PortfolioDbContext context) : IAccountRepository
     public Task<Account?> GetByIdAsync(int id) =>
         context.Accounts.FirstOrDefaultAsync(a => a.Id == id);
 
+    public async Task<IReadOnlyList<Account>> GetAllAsync() =>
+        await context.Accounts.OrderBy(a => a.Name).ToListAsync();
+
     public Task<Account?> GetByNameAsync(string name) =>
         context.Accounts.FirstOrDefaultAsync(a => a.Name == name);
 

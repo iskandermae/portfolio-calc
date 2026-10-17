@@ -1,18 +1,17 @@
 using System.Globalization;
 using PortfolioCalc.Core.Domain;
-using PortfolioCalc.Core.Import;
 using PortfolioCalc.Core.Import.Ibkr;
 using PortfolioCalc.Core.Repositories;
 using static PortfolioCalc.App.Application.Import.Ibkr.IbkrConstants;
 
 namespace PortfolioCalc.App.Application.Import.Ibkr;
 
-/// <summary>Maps raw rows from an <see cref="ITransactionImporter"/> onto the local
+/// <summary>Maps raw rows from an <see cref="IIbkrTransactionImporter"/> onto the local
 /// domain model: resolves/auto-creates Account, Security (keyed by Symbol + Currency) and
 /// Position, and persists the resulting transactions. See doc/decisions.md for the
 /// account/security matching rules.</summary>
 public class IbkrImportService(
-    ITransactionImporter importer,
+    IIbkrTransactionImporter importer,
     IAccountRepository accountRepository,
     ISecurityRepository securityRepository,
     IVocabularyRepository vocabularyRepository,
@@ -316,11 +315,8 @@ public class IbkrImportService(
     }
 
     /// <summary>Resolves/auto-creates a Security, threading through the row's raw
-    /// listingExchange code (if present). A newly-created Security gets it directly; an
-    /// existing Security with no Exchange recorded yet (e.g. imported before this field
-    /// existed) is backfilled in place. An existing Security that already has an
-    /// Exchange is left untouched — the first non-empty value ever seen is authoritative,
-    /// so a later row can't flip-flop it. See doc/decisions.md.</summary>
+    /// listingExchange code (if present) into a newly-created one. An existing Security is
+    /// returned untouched — its Exchange is never updated. See doc/decisions.md.</summary>
     private async Task<Security> ResolveSecurityAsync(string securitySymbol, string currency, string? exchange)
     {
         var existing = await securityRepository.GetBySymbolAndCurrencyAsync(securitySymbol, currency);
@@ -333,12 +329,6 @@ public class IbkrImportService(
                 Name = securitySymbol,
                 Exchange = string.IsNullOrEmpty(exchange) ? null : exchange,
             });
-        }
-
-        if (string.IsNullOrEmpty(existing.Exchange) && !string.IsNullOrEmpty(exchange))
-        {
-            existing.Exchange = exchange;
-            await securityRepository.UpdateAsync(existing);
         }
 
         return existing;

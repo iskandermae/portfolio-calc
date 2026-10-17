@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using PortfolioCalc.App.Application.Fx;
 using PortfolioCalc.App.Application.Positions;
 using PortfolioCalc.App.Application.Prices;
@@ -69,7 +70,7 @@ public class PositionValuationServiceTests
         var settingsRepository = new AppSettingsRepository(context);
         settingsRepository.SaveAsync(new AppSettings { BaseCurrency = baseCurrency }).GetAwaiter().GetResult();
         var conversionService = new BaseCurrencyConversionService(settingsRepository, fxRateService);
-        return new PositionValuationService(transactionRepository, priceService, conversionService);
+        return new PositionValuationService(transactionRepository, priceService, conversionService, NullLogger<PositionValuationService>.Instance);
     }
 
     // --- Position derivation ---

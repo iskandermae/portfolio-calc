@@ -6,8 +6,9 @@ namespace PortfolioCalc.Core.Import.Ibkr;
 /// snapshot, not a transaction log, and is never imported (see doc/decisions.md).</summary>
 public sealed class IbkrFlexQueryImportData
 {
-    /// <summary>The FlexStatement's own accountId attribute — the fallback account
-    /// identity when no row carries a non-blank acctAlias.</summary>
+    /// <summary>The FlexStatement's own accountId attribute — the sole account identity
+    /// used to resolve/auto-create the local Account (see doc/decisions.md); per-row
+    /// acctAlias is not consulted.</summary>
     public required string StatementAccountId { get; init; }
     public required IReadOnlyList<IbkrRawRow> Trades { get; init; }
     public required IReadOnlyList<IbkrRawRow> CashTransactions { get; init; }

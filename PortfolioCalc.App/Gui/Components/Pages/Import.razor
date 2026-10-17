@@ -1,15 +1,61 @@
 @page "/import"
 @using PortfolioCalc.App.Application.Import
 @using PortfolioCalc.App.Application.Import.Ibkr
-@inject IbkrImportService ImportService
+@using PortfolioCalc.App.Application.Import.T212
+@using PortfolioCalc.Core.Domain
+@using PortfolioCalc.Core.Repositories
+@inject IbkrImportService IbkrImportService
+@inject T212ImportService T212ImportService
+@inject IAccountRepository AccountRepository
 @inject ILogger<Import> Logger
 
-<h1>Import IBKR Transactions</h1>
+<h1>Import Transactions</h1>
 
-<p>Select an IBKR Flex Query XML export to import Buy/Sell trades, deposits/withdrawals,
-   interest, dividends, taxes and in-kind transfers.</p>
+<div class="mb-3">
+    <label for="broker" class="form-label">Broker</label>
+    <select id="broker" class="form-select" style="max-width: 16rem" value="@_broker" @onchange="OnBrokerChanged">
+        <option value="@Broker.Ibkr">Interactive Brokers (IBKR)</option>
+        <option value="@Broker.T212">Trading 212</option>
+    </select>
+</div>
 
-<InputFile OnChange="OnFileSelected" accept=".xml" />
+@if (_broker == Broker.Ibkr)
+{
+    <p>Select an IBKR Flex Query XML export to import Buy/Sell trades, deposits/withdrawals,
+       interest, dividends, taxes and in-kind transfers.</p>
+}
+else
+{
+    <p>Select a Trading 212 "Transaction history" CSV export to import deposits, interest,
+       buy/sell trades and dividends. The file carries no account identity, so pick the
+       account to import into below.</p>
+
+    <p class="text-muted">Note: Trading 212 exports have no listing exchange. Securities traded in GBP
+       are assigned the exchange <code>MY_T212.L</code> (map it to <code>.L</code> in Vocabularies);
+       other currencies get no exchange.</p>
+
+    <div class="mb-3">
+        <label for="t212Account" class="form-label">Account</label>
+        <select id="t212Account" class="form-select" style="max-width: 16rem"
+                value="@(_selectedAccountId?.ToString() ?? "")" @onchange="OnAccountChanged">
+            <option value="">-- New account --</option>
+            @foreach (var account in _accounts)
+            {
+                <option value="@account.Id">@account.Name</option>
+            }
+        </select>
+    </div>
+
+    @if (_selectedAccountId is null)
+    {
+        <div class="mb-3">
+            <label for="newAccountName" class="form-label">New account name</label>
+            <input id="newAccountName" class="form-control" style="max-width: 16rem" @bind="_newAccountName" />
+        </div>
+    }
+}
+
+<InputFile OnChange="OnFileSelected" accept="@(_broker == Broker.Ibkr ? ".xml" : ".csv")" />
 
 @if (_isImporting)
 {
@@ -49,11 +95,35 @@
 }
 
 @code {
+    private enum Broker { Ibkr, T212 }
+
     private const long MaxFileSizeBytes = 20 * 1024 * 1024;
 
+    private Broker _broker = Broker.Ibkr;
+    private List<Account> _accounts = [];
+    private int? _selectedAccountId;
+    private string _newAccountName = "";
     private bool _isImporting;
     private string? _error;
     private ImportResult? _result;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _accounts = (await AccountRepository.GetAllAsync()).ToList();
+    }
+
+    private void OnBrokerChanged(ChangeEventArgs e)
+    {
+        _broker = Enum.Parse<Broker>((string)e.Value!);
+        _result = null;
+        _error = null;
+    }
+
+    private void OnAccountChanged(ChangeEventArgs e)
+    {
+        var value = (string)e.Value!;
+        _selectedAccountId = string.IsNullOrEmpty(value) ? null : int.Parse(value);
+    }
 
     private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
@@ -63,7 +133,15 @@
         try
         {
             using var stream = e.File.OpenReadStream(MaxFileSizeBytes);
-            _result = await ImportService.ImportAsync(stream);
+            if (_broker == Broker.Ibkr)
+            {
+                _result = await IbkrImportService.ImportAsync(stream);
+            }
+            else
+            {
+                var accountId = await ResolveT212AccountIdAsync();
+                _result = await T212ImportService.ImportAsync(stream, accountId);
+            }
         }
         catch (Exception ex)
         {
@@ -74,5 +152,19 @@
         {
             _isImporting = false;
         }
+    }
+
+    private async Task<int> ResolveT212AccountIdAsync()
+    {
+        if (_selectedAccountId is int id)
+            return id;
+
+        if (string.IsNullOrWhiteSpace(_newAccountName))
+            throw new InvalidOperationException("Enter a name for the new account.");
+
+        var account = await AccountRepository.AddAsync(new Account { Name = _newAccountName.Trim() });
+        _accounts.Add(account);
+        _selectedAccountId = account.Id;
+        return account.Id;
     }
 }

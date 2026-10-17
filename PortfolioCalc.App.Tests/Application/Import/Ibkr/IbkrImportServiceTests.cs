@@ -4,6 +4,7 @@ using PortfolioCalc.Core.Data;
 using PortfolioCalc.Core.Data.Import.Ibkr;
 using PortfolioCalc.Core.Data.Repositories;
 using PortfolioCalc.Core.Domain;
+using PortfolioCalc.Core.Repositories;
 
 namespace PortfolioCalc.App.Tests.Application.Import.Ibkr;
 
@@ -24,6 +25,7 @@ public class IbkrImportServiceTests
         new(new IbkrFlexQueryImporter(),
             new AccountRepository(context),
             new SecurityRepository(context),
+            new VocabularyRepository(context),
             new PositionRepository(context),
             new CashTransactionRepository(context),
             new SecurityTransactionRepository(context));
@@ -63,7 +65,7 @@ public class IbkrImportServiceTests
     }
 
     [Fact]
-    public async Task ImportAsync_resolves_the_account_by_alias()
+    public async Task ImportAsync_resolves_the_account_by_statement_account_id()
     {
         using var context = CreateOpenInMemoryContext();
         var service = CreateService(context);
@@ -72,7 +74,7 @@ public class IbkrImportServiceTests
         await service.ImportAsync(stream);
 
         var account = Assert.Single(context.Accounts);
-        Assert.Equal(IbkrSampleFixture.AccountAlias, account.Name);
+        Assert.Equal(IbkrSampleFixture.StatementAccountId, account.Name);
     }
 
     [Fact]
@@ -243,28 +245,6 @@ public class IbkrImportServiceTests
 
         // <Trade ... symbol="TSTA" ... listingExchange="LSEETF" .../>
         var tsta = context.Securities.Single(s => s.Symbol == "TSTA");
-        Assert.Equal("LSEETF", tsta.Exchange);
-    }
-
-    [Fact]
-    public async Task ImportAsync_backfills_the_exchange_on_a_pre_existing_security_with_no_exchange_recorded()
-    {
-        using var context = CreateOpenInMemoryContext();
-        // Simulates a Security imported before this feature existed: same Symbol +
-        // Currency as a real row in the fixture, but no Exchange recorded yet.
-        var securityRepository = new SecurityRepository(context);
-        var preExisting = await securityRepository.AddAsync(
-            new Security { Symbol = "TSTA", Name = "TSTA", Currency = "GBP" });
-        Assert.Null(preExisting.Exchange);
-
-        var service = CreateService(context);
-        using var stream = IbkrSampleFixture.OpenStream();
-        await service.ImportAsync(stream);
-
-        // Re-importing dedupes the transaction itself, but the existing Security row
-        // must still get backfilled with the exchange the row reports.
-        var tsta = context.Securities.Single(s => s.Symbol == "TSTA");
-        Assert.Equal(preExisting.Id, tsta.Id);
         Assert.Equal("LSEETF", tsta.Exchange);
     }
 
