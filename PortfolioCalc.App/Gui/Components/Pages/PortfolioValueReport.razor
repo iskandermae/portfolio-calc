@@ -1,8 +1,11 @@
 @page "/portfolio-value-report"
+@using PortfolioCalc.App.Application.Grids
 @using PortfolioCalc.App.Application.Positions
+@using PortfolioCalc.Core.Repositories
 @using PortfolioValueReportModel = PortfolioCalc.App.Application.Positions.PortfolioValueReport
 @inject PositionValuationService PositionValuationService
 @inject PositionPerformanceService PositionPerformanceService
+@inject IUiLayoutSettingRepository LayoutRepository
 @inject ILogger<PortfolioValueReport> Logger
 
 <h1>Current Portfolio Value</h1>
@@ -11,12 +14,18 @@
 {
     <p class="text-danger">@_error</p>
 }
-else if (_report is null)
+else if (_report is null || _view is null)
 {
     <p><em>Loading...</em></p>
 }
 else
 {
+    <ColumnChooser Layout="_layout" Changed="SaveLayoutAsync" />
+
+    <AccountCurrencyFilterBar Accounts="_accountOptions" Currencies="_currencyOptions"
+                              @bind-Account="_accountFilter" @bind-Account:after="ApplyView"
+                              @bind-Currency="_currencyFilter" @bind-Currency:after="ApplyView" />
+
     <p>
         <input type="checkbox" id="show-analytics" checked="@_showAnalytics" @onchange="e => ToggleShowAnalyticsAsync((bool)e.Value!)" />
         <label for="show-analytics">Show analytics</label>
@@ -39,12 +48,12 @@ else
         <table class="table">
             <thead>
                 <tr>
-                    <th>Account</th>
-                    <th>Security</th>
-                    <th>Quantity</th>
-                    <th>Price</th>
-                    <th>Value (security currency)</th>
-                    <th>Value (@_report.BaseCurrency)</th>
+                    @foreach (var column in _layout.Columns.Where(c => c.Visible))
+                    {
+                        <th style="cursor: pointer" @onclick="() => SortByAsync(column.Key)">
+                            @HeaderLabel(column)@(_layout.SortKey == column.Key ? (_layout.SortDescending ? " ▼" : " ▲") : "")
+                        </th>
+                    }
                     @if (_showAnalytics)
                     {
                         <th>Net invested (@_report.BaseCurrency)</th>
@@ -56,16 +65,14 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var position in _report.Positions)
+                @foreach (var position in _view.Positions)
                 {
                     var figures = _performanceByPositionId.GetValueOrDefault(position.PositionId);
                     <tr class="@(position.IsResolved ? "" : "table-warning")">
-                        <td>@position.AccountName</td>
-                        <td>@position.SecuritySymbol (@position.SecurityCurrency)</td>
-                        <td>@position.Quantity</td>
-                        <td>@(position.Price?.ToString("N2") ?? "-")</td>
-                        <td>@(position.ValueInSecurityCurrency?.ToString("N2") ?? "-")</td>
-                        <td>@(position.ValueInBaseCurrency?.ToString("N2") ?? "-")</td>
+                        @foreach (var column in _layout.Columns.Where(c => c.Visible))
+                        {
+                            <td>@FormatCell(position, column.Key)</td>
+                        }
                         @if (_showAnalytics)
                         {
                             <td class="@(figures is { IsFullyResolved: false } ? "table-warning" : "")">@(figures?.NetInvested.ToString("N2") ?? "-")</td>
@@ -84,23 +91,19 @@ else
             </tbody>
             <tfoot>
                 <tr>
-                    <th colspan="5" class="text-end">Grand total (@_report.BaseCurrency)</th>
-                    <th>@_report.GrandTotalInBaseCurrency.ToString("N2")</th>
-                    @if (_showAnalytics)
-                    {
-                        <th colspan="4"></th>
-                    }
-                    <th></th>
+                    <th colspan="@(_layout.Columns.Count(c => c.Visible) + (_showAnalytics ? 5 : 1))" class="text-end">
+                        Grand total (@_report.BaseCurrency): @_view.GrandTotalInBaseCurrency.ToString("N2")
+                    </th>
                 </tr>
             </tfoot>
         </table>
 
-        @if (_report.Positions.Any(p => !p.IsResolved))
+        @if (_view.Positions.Any(p => !p.IsResolved))
         {
             <p><em>Positions highlighted above could not be priced and/or converted to @_report.BaseCurrency
                (unsupported security, pending validation, or a network error) and are excluded from the grand total.</em></p>
         }
-        @if (_showAnalytics && _performanceByPositionId.Values.Any(f => !f.IsFullyResolved))
+        @if (_showAnalytics && _view.Positions.Any(p => _performanceByPositionId.GetValueOrDefault(p.PositionId) is { IsFullyResolved: false }))
         {
             <p><em>Analytics columns highlighted above are based on incomplete data (a price, FX rate, or
                inflation rate for one of the position's transactions could not be resolved).</em></p>
@@ -109,7 +112,24 @@ else
 }
 
 @code {
+    private const string ScreenKey = "PortfolioValueReport";
+
+    private readonly GridLayout _layout = new(
+    [
+        ("Account", "Account"),
+        ("Security", "Security"),
+        ("Quantity", "Quantity"),
+        ("Price", "Price"),
+        ("ValueInSecurityCurrency", "Value (security currency)"),
+        ("ValueInBaseCurrency", "Value (base currency)"),
+    ], "Account");
+
     private PortfolioValueReportModel? _report;
+    private PortfolioValueReportModel? _view;
+    private IReadOnlyList<string> _accountOptions = [];
+    private IReadOnlyList<string> _currencyOptions = [];
+    private string? _accountFilter;
+    private string? _currencyFilter;
     private Dictionary<int, PositionPerformanceFigures> _performanceByPositionId = [];
     private bool _showAnalytics;
     private bool _inflationAdjusted;
@@ -121,7 +141,11 @@ else
         try
         {
             _today = DateOnly.FromDateTime(DateTime.UtcNow);
+            await _layout.LoadAsync<SavedGridLayout>(LayoutRepository, ScreenKey);
             _report = await PositionValuationService.GetCurrentValueAsync(_today);
+            _accountOptions = AccountCurrencyFilter.Options(_report.Positions.Select(p => p.AccountName));
+            _currencyOptions = AccountCurrencyFilter.Options(_report.Positions.Select(p => p.SecurityCurrency));
+            ApplyView();
         }
         catch (Exception ex)
         {
@@ -129,6 +153,33 @@ else
             _error = "Could not load the portfolio value report. See the Logs page for details.";
         }
     }
+
+    /// <summary>Filters/sorts the already-loaded report; never re-fetches prices, FX or inflation.</summary>
+    private void ApplyView() =>
+        _view = PortfolioValueGridView.Apply(_report!, _accountFilter, _currencyFilter, _layout.SortKey, _layout.SortDescending);
+
+    private Task SaveLayoutAsync() => _layout.SaveAsync(LayoutRepository, ScreenKey, new SavedGridLayout());
+
+    private async Task SortByAsync(string key)
+    {
+        _layout.SortBy(key);
+        ApplyView();
+        await SaveLayoutAsync();
+    }
+
+    private string HeaderLabel(GridColumnState column) =>
+        column.Key == "ValueInBaseCurrency" ? $"Value ({_report!.BaseCurrency})" : column.Label;
+
+    private static string FormatCell(PositionValuation position, string key) => key switch
+    {
+        "Account" => position.AccountName,
+        "Security" => $"{position.SecuritySymbol} ({position.SecurityCurrency})",
+        "Quantity" => position.Quantity.ToString(),
+        "Price" => position.Price?.ToString("N2") ?? "-",
+        "ValueInSecurityCurrency" => position.ValueInSecurityCurrency?.ToString("N2") ?? "-",
+        "ValueInBaseCurrency" => position.ValueInBaseCurrency?.ToString("N2") ?? "-",
+        _ => "",
+    };
 
     private async Task ToggleShowAnalyticsAsync(bool show)
     {

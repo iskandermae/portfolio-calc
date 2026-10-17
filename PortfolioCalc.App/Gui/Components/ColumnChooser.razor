@@ -1,0 +1,36 @@
+@using PortfolioCalc.App.Application.Grids
+
+<p>
+    <strong>Columns:</strong>
+    @foreach (var column in Layout.Columns)
+    {
+        <span class="me-3">
+            <input type="checkbox" id="@("col-" + column.Key)" checked="@column.Visible"
+                   @onchange="e => ToggleAsync(column, (bool)e.Value!)" />
+            <label for="@("col-" + column.Key)">@column.Label</label>
+            <button class="btn btn-sm btn-link p-0" title="Move left" disabled="@(Layout.Columns.IndexOf(column) == 0)"
+                    @onclick="() => MoveAsync(column, -1)">&larr;</button>
+            <button class="btn btn-sm btn-link p-0" title="Move right" disabled="@(Layout.Columns.IndexOf(column) == Layout.Columns.Count - 1)"
+                    @onclick="() => MoveAsync(column, 1)">&rarr;</button>
+        </span>
+    }
+</p>
+
+@code {
+    [Parameter, EditorRequired] public GridLayout Layout { get; set; } = null!;
+
+    /// <summary>Raised after the layout changed; the page persists it.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private Task ToggleAsync(GridColumnState column, bool visible)
+    {
+        column.Visible = visible;
+        return Changed.InvokeAsync();
+    }
+
+    private Task MoveAsync(GridColumnState column, int direction)
+    {
+        Layout.Move(column, direction);
+        return Changed.InvokeAsync();
+    }
+}

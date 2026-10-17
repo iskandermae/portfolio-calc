@@ -1,6 +1,7 @@
 ﻿using ApexCharts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PortfolioCalc.App.Application.Caching;
 using PortfolioCalc.App.Application.Fx;
 using PortfolioCalc.App.Application.Import.Ibkr;
 using PortfolioCalc.App.Application.Import.T212;
@@ -68,12 +69,17 @@ public static class MauiProgram
 		// Frankfurter doesn't cover UAH (story 12); the composite routes a UAH-involving
 		// pair to the NBU-backed provider and everything else to Frankfurter — see
 		// doc/decisions.md.
-		builder.Services.AddScoped<IFxRateProvider>(sp => new CompositeFxRateProvider(
-			sp.GetRequiredService<FrankfurterFxRateProvider>(), sp.GetRequiredService<NbuFxRateProvider>()));
+		builder.Services.AddScoped<ExternalCallCache>();
+		builder.Services.AddScoped<IFxRateProvider>(sp => new CachingFxRateProvider(
+			new CompositeFxRateProvider(
+				sp.GetRequiredService<FrankfurterFxRateProvider>(), sp.GetRequiredService<NbuFxRateProvider>()),
+			sp.GetRequiredService<ExternalCallCache>()));
 		builder.Services.AddScoped<FxRateService>();
 
 		builder.Services.AddScoped<ISecurityPriceRepository, SecurityPriceRepository>();
-		builder.Services.AddHttpClient<ISecurityPriceProvider, YahooFinanceSecurityPriceProvider>();
+		builder.Services.AddHttpClient<YahooFinanceSecurityPriceProvider>();
+		builder.Services.AddScoped<ISecurityPriceProvider>(sp => new CachingSecurityPriceProvider(
+			sp.GetRequiredService<YahooFinanceSecurityPriceProvider>(), sp.GetRequiredService<ExternalCallCache>()));
 		builder.Services.AddScoped<SecurityPriceService>();
 
 		builder.Services.AddScoped<IAppSettingsRepository, AppSettingsRepository>();

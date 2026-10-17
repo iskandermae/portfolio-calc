@@ -1,0 +1,35 @@
+<div class="d-flex gap-3 mb-3">
+    <div>
+        <label for="accountFilter" class="form-label">Account</label>
+        <select id="accountFilter" class="form-select" value="@(Account ?? "")"
+                @onchange="e => AccountChanged.InvokeAsync(ToSelection((string)e.Value!))">
+            <option value="">-- All accounts --</option>
+            @foreach (var account in Accounts)
+            {
+                <option value="@account">@account</option>
+            }
+        </select>
+    </div>
+    <div>
+        <label for="currencyFilter" class="form-label">Currency</label>
+        <select id="currencyFilter" class="form-select" value="@(Currency ?? "")"
+                @onchange="e => CurrencyChanged.InvokeAsync(ToSelection((string)e.Value!))">
+            <option value="">-- All currencies --</option>
+            @foreach (var currency in Currencies)
+            {
+                <option value="@currency">@currency</option>
+            }
+        </select>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<string> Accounts { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<string> Currencies { get; set; } = [];
+    [Parameter] public string? Account { get; set; }
+    [Parameter] public string? Currency { get; set; }
+    [Parameter] public EventCallback<string?> AccountChanged { get; set; }
+    [Parameter] public EventCallback<string?> CurrencyChanged { get; set; }
+
+    private static string? ToSelection(string value) => value.Length == 0 ? null : value;
+}

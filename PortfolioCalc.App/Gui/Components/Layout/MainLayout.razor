@@ -1,4 +1,8 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@implements IDisposable
+@using PortfolioCalc.App.Application.Caching
+@inject NavigationManager NavigationManager
+@inject ExternalCallCache ExternalCallCache
 
 <div class="page">
     <div class="sidebar">
@@ -11,3 +15,11 @@
         </article>
     </main>
 </div>
+
+@code {
+    protected override void OnInitialized() => NavigationManager.LocationChanged += OnLocationChanged;
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => ExternalCallCache.Clear();
+
+    public void Dispose() => NavigationManager.LocationChanged -= OnLocationChanged;
+}

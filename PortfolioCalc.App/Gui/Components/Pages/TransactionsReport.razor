@@ -1,6 +1,7 @@
 @page "/transactions-report"
 @using System.Text.Json
 @using PortfolioCalc.App.Application.Fx
+@using PortfolioCalc.App.Application.Grids
 @using PortfolioCalc.App.Application.Transactions
 @using PortfolioCalc.Core.Domain
 @using PortfolioCalc.Core.Repositories
@@ -21,21 +22,11 @@
 }
 else
 {
-    <p>
-        <strong>Columns:</strong>
-        @foreach (var column in _columns)
-        {
-            <span class="me-3">
-                <input type="checkbox" id="@("col-" + column.Key)" checked="@column.Visible"
-                       @onchange="e => ToggleColumnAsync(column, (bool)e.Value!)" />
-                <label for="@("col-" + column.Key)">@column.Label</label>
-                <button class="btn btn-sm btn-link p-0" title="Move left" disabled="@(_columns.IndexOf(column) == 0)"
-                        @onclick="() => MoveColumnAsync(column, -1)">&larr;</button>
-                <button class="btn btn-sm btn-link p-0" title="Move right" disabled="@(_columns.IndexOf(column) == _columns.Count - 1)"
-                        @onclick="() => MoveColumnAsync(column, 1)">&rarr;</button>
-            </span>
-        }
-    </p>
+    <ColumnChooser Layout="_layout" Changed="SaveLayoutAsync" />
+
+    <AccountCurrencyFilterBar Accounts="_accountOptions" Currencies="_currencyOptions"
+                              @bind-Account="_accountFilter" @bind-Account:after="ApplySort"
+                              @bind-Currency="_currencyFilter" @bind-Currency:after="ApplySort" />
 
     <p>
         <input type="checkbox" id="show-secondary" checked="@_showSecondary"
@@ -59,10 +50,10 @@ else
     <table class="table">
         <thead>
             <tr>
-                @foreach (var column in _columns.Where(c => c.Visible))
+                @foreach (var column in _layout.Columns.Where(c => c.Visible))
                 {
                     <th style="cursor: pointer" @onclick="() => SortByAsync(column.Key)">
-                        @column.Label@(_sortKey == column.Key ? (_sortDescending ? " ▼" : " ▲") : "")
+                        @column.Label@(_layout.SortKey == column.Key ? (_layout.SortDescending ? " ▼" : " ▲") : "")
                     </th>
                 }
                 @if (_showAnalytics)
@@ -78,7 +69,7 @@ else
             {
                 var performance = row.TransactionId is not null ? _performanceByTransactionId.GetValueOrDefault(row.TransactionId.Value) : null;
                 <tr>
-                    @foreach (var column in _columns.Where(c => c.Visible))
+                    @foreach (var column in _layout.Columns.Where(c => c.Visible))
                     {
                         <td class="@(IsNumericColumn(column.Key) ? "text-end" : "")">@FormatCell(row, column.Key)</td>
                     }
@@ -101,7 +92,7 @@ else
                 @if (_expandedRowKeys.Contains(row.Key))
                 {
                     <tr>
-                        <td colspan="@(_columns.Count(c => c.Visible) + (_showAnalytics ? 3 : 1))">
+                        <td colspan="@(_layout.Columns.Count(c => c.Visible) + (_showAnalytics ? 3 : 1))">
                             <textarea class="form-control font-monospace" readonly rows="@DetailsLineCount(row)">@row.Details</textarea>
                         </td>
                     </tr>
@@ -122,48 +113,33 @@ else
         public string Key => TransactionId is not null ? $"S{TransactionId}" : $"C{CashTransactionId}";
     }
 
-    private class ColumnState
+    private class SavedTransactionsLayout : SavedGridLayout
     {
-        public required string Key { get; init; }
-        public required string Label { get; init; }
-        public bool Visible { get; set; } = true;
-    }
-
-    private class SavedColumn
-    {
-        public required string Key { get; set; }
-        public bool Visible { get; set; }
-    }
-
-    private class SavedLayout
-    {
-        public List<SavedColumn> Columns { get; set; } = [];
-        public string? SortKey { get; set; }
-        public bool SortDescending { get; set; }
-
         /// <summary>Added after this screen's layout was first shipped — missing in
         /// already-saved JSON deserializes to false (System.Text.Json's default for a
         /// bool it doesn't find), which is also this filter's intended default.</summary>
         public bool ShowSecondary { get; set; }
     }
 
-    private List<ColumnState> _columns =
+    private readonly GridLayout _layout = new(
     [
-        new() { Key = "Date", Label = "Date" },
-        new() { Key = "Kind", Label = "Type" },
-        new() { Key = "Account", Label = "Account" },
-        new() { Key = "Security", Label = "Security" },
-        new() { Key = "Quantity", Label = "Quantity" },
-        new() { Key = "Amount", Label = "Amount" },
-        new() { Key = "Currency", Label = "Currency" },
-        new() { Key = "Fee", Label = "Fee" },
-        new() { Key = "Note", Label = "Note" },
-    ];
+        ("Date", "Date"),
+        ("Kind", "Type"),
+        ("Account", "Account"),
+        ("Security", "Security"),
+        ("Quantity", "Quantity"),
+        ("Amount", "Amount"),
+        ("Currency", "Currency"),
+        ("Fee", "Fee"),
+        ("Note", "Note"),
+    ], "Date");
 
     private IReadOnlyList<TransactionRow> _rows = [];
     private IReadOnlyList<TransactionRow> _sortedRows = [];
-    private string _sortKey = "Date";
-    private bool _sortDescending;
+    private IReadOnlyList<string> _accountOptions = [];
+    private IReadOnlyList<string> _currencyOptions = [];
+    private string? _accountFilter;
+    private string? _currencyFilter;
     private bool _showSecondary;
     private bool _showAnalytics;
     private bool _inflationAdjusted;
@@ -192,46 +168,12 @@ else
 
     private async Task LoadLayoutAsync()
     {
-        var saved = await LayoutRepository.GetAsync(ScreenKey);
-        if (saved is null)
-            return;
-
-        var layout = JsonSerializer.Deserialize<SavedLayout>(saved.LayoutJson);
-        if (layout is null)
-            return;
-
-        var byKey = _columns.ToDictionary(c => c.Key);
-        var ordered = new List<ColumnState>();
-        foreach (var savedColumn in layout.Columns)
-        {
-            if (!byKey.TryGetValue(savedColumn.Key, out var column))
-                continue;
-            column.Visible = savedColumn.Visible;
-            ordered.Add(column);
-        }
-        foreach (var column in _columns)
-        {
-            if (!ordered.Contains(column))
-                ordered.Add(column);
-        }
-        _columns = ordered;
-
-        _sortKey = layout.SortKey ?? _sortKey;
-        _sortDescending = layout.SortDescending;
-        _showSecondary = layout.ShowSecondary;
+        var saved = await _layout.LoadAsync<SavedTransactionsLayout>(LayoutRepository, ScreenKey);
+        _showSecondary = saved?.ShowSecondary ?? false;
     }
 
-    private async Task SaveLayoutAsync()
-    {
-        var layout = new SavedLayout
-        {
-            Columns = _columns.Select(c => new SavedColumn { Key = c.Key, Visible = c.Visible }).ToList(),
-            SortKey = _sortKey,
-            SortDescending = _sortDescending,
-            ShowSecondary = _showSecondary,
-        };
-        await LayoutRepository.SaveAsync(ScreenKey, JsonSerializer.Serialize(layout));
-    }
+    private Task SaveLayoutAsync() =>
+        _layout.SaveAsync(LayoutRepository, ScreenKey, new SavedTransactionsLayout { ShowSecondary = _showSecondary });
 
     private async Task LoadRowsAsync()
     {
@@ -253,6 +195,12 @@ else
             .ToList();
 
         _rows = rows;
+        _accountOptions = AccountCurrencyFilter.Options(rows.Select(r => r.Account));
+        _currencyOptions = AccountCurrencyFilter.Options(rows.Select(r => r.Currency));
+        if (_accountFilter is not null && !_accountOptions.Contains(_accountFilter))
+            _accountFilter = null;
+        if (_currencyFilter is not null && !_currencyOptions.Contains(_currencyFilter))
+            _currencyFilter = null;
         _buyTransactionsById = securityTransactions
             .Where(t => t.Type == SecurityTransactionType.Buy)
             .ToDictionary(t => t.Id);
@@ -293,9 +241,11 @@ else
 
     private void ApplySort()
     {
-        var filtered = _rows.Where(r => _showSecondary || r.Category == TransactionCategory.Primary);
+        var filtered = _rows
+            .Where(r => _showSecondary || r.Category == TransactionCategory.Primary)
+            .Where(r => AccountCurrencyFilter.Matches(r.Account, r.Currency, _accountFilter, _currencyFilter));
 
-        IEnumerable<TransactionRow> ordered = _sortKey switch
+        IEnumerable<TransactionRow> ordered = _layout.SortKey switch
         {
             "Kind" => filtered.OrderBy(r => r.Kind),
             "Account" => filtered.OrderBy(r => r.Account),
@@ -307,25 +257,13 @@ else
             "Note" => filtered.OrderBy(r => r.Note),
             _ => filtered.OrderBy(r => r.Date),
         };
-        _sortedRows = (_sortDescending ? ordered.Reverse() : ordered).ToList();
+        _sortedRows = (_layout.SortDescending ? ordered.Reverse() : ordered).ToList();
     }
 
     private async Task SortByAsync(string key)
     {
-        if (_sortKey == key)
-            _sortDescending = !_sortDescending;
-        else
-        {
-            _sortKey = key;
-            _sortDescending = false;
-        }
+        _layout.SortBy(key);
         ApplySort();
-        await SaveLayoutAsync();
-    }
-
-    private async Task ToggleColumnAsync(ColumnState column, bool visible)
-    {
-        column.Visible = visible;
         await SaveLayoutAsync();
     }
 
@@ -333,18 +271,6 @@ else
     {
         _showSecondary = show;
         ApplySort();
-        await SaveLayoutAsync();
-    }
-
-    private async Task MoveColumnAsync(ColumnState column, int direction)
-    {
-        var index = _columns.IndexOf(column);
-        var newIndex = index + direction;
-        if (newIndex < 0 || newIndex >= _columns.Count)
-            return;
-
-        _columns.RemoveAt(index);
-        _columns.Insert(newIndex, column);
         await SaveLayoutAsync();
     }
 

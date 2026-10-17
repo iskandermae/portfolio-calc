@@ -190,3 +190,17 @@ remove/update an entry once it's superseded rather than layering a correction on
   for a GBP-denominated security that isn't London-listed, fixable by editing its exchange.
 - The Transactions page's "Details" memo shows currencies as plain codes: there is no currency
   entity/name table (see `SupportedCurrencies`), and none was added for display.
+- Story 15's Account/Currency filters are matched by account name (the Portfolio Value rows
+  carry no account id) and their options derive from the loaded rows, never persisted. The
+  Portfolio Value grand total is recomputed over the filtered rows by `PortfolioValueGridView`
+  from the already-loaded report, so a filter change never re-fetches prices/FX/inflation, and
+  analytics stay keyed by position id over the full report. Its footer is one right-aligned
+  total cell, not a cell under the value column, since columns are now hideable/reorderable.
+- Column order/visibility/sort persistence is the shared `GridLayout` (+ `ColumnChooser`
+  component); a screen with extra saved state derives from `SavedGridLayout` (Transactions
+  adds `ShowSecondary`), keeping its existing JSON shape compatible with already-saved layouts.
+- External FX/price provider calls (only those — never DB reads) are memoized per page by
+  decorators over `IFxRateProvider`/`ISecurityPriceProvider` sharing one `ExternalCallCache`,
+  cleared on every navigation by `MainLayout`; no invalidation otherwise, to stay trivially
+  simple. It exists because failed/pending lookups aren't stored in the DB and would otherwise
+  hit the network on every analytics toggle.
